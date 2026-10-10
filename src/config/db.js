@@ -1,9 +1,10 @@
 import mongoose from 'mongoose';
-import config from '../config/index.js';
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(config.mongo.uri);
+    const conn = await mongoose.connect(
+      process.env.MONGODB_URI || 'mongodb://localhost:27017/c-mopol'
+    );
     console.log(`✅ MongoDB connected: ${conn.connection.host}`);
   } catch (error) {
     console.error(`❌ MongoDB connection error: ${error.message}`);

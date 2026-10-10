@@ -1,61 +1,60 @@
-import ApiError from '../utils/ApiError.js';
-import config from '../config/index.js';
+/**
+ * 404 Not Found Middleware
+ */
+const notFound = (req, res, next) => {
+  const error = new Error(`Route not found: ${req.method} ${req.originalUrl}`);
+  error.statusCode = 404;
+  next(error);
+};
 
 /**
- * Global error-handling middleware.
- *
- * ── Response shape (consistent with ApiResponse) ──
- * {
- *   success: false,
- *   message: "...",
- *   errors:  [ ... ],         // optional validation details
- *   stack:   "..."            // only in development
- * }
+ * Global Error-Handling Middleware
  */
 // eslint-disable-next-line no-unused-vars
 const errorHandler = (err, req, res, next) => {
-  // ── Normalise to an ApiError ───────────────────────────────────
+  let statusCode = err.statusCode || (res.statusCode === 200 ? 500 : res.statusCode);
+  let message = err.message || 'Internal server error';
 
   // Mongoose bad ObjectId / CastError
   if (err.name === 'CastError') {
-    err = ApiError.badRequest(`Invalid ${err.path}: ${err.value}`);
+    statusCode = 400;
+    message = `Invalid ${err.path}: ${err.value}`;
   }
 
   // Mongoose duplicate key (E11000)
   if (err.code === 11000) {
+    statusCode = 409;
     const field = Object.keys(err.keyValue).join(', ');
-    err = ApiError.conflict(`Duplicate value for field(s): ${field}`);
+    message = `Duplicate value for field(s): ${field}`;
   }
 
   // Mongoose validation error
   if (err.name === 'ValidationError') {
-    const messages = Object.values(err.errors).map((e) => e.message);
-    err = ApiError.badRequest('Validation failed', messages);
+    statusCode = 400;
+    message = 'Validation failed';
+    err.errors = Object.values(err.errors).map((e) => e.message);
   }
 
-  // JSON parse errors
+  // JSON parse error
   if (err.type === 'entity.parse.failed') {
-    err = ApiError.badRequest('Invalid JSON in request body');
+    statusCode = 400;
+    message = 'Invalid JSON in request body';
   }
 
-  // ── Build response ────────────────────────────────────────────
-
-  const statusCode = err.statusCode || 500;
-  const message = err.message || 'Internal server error';
-
-  const body = {
+  const response = {
     success: false,
     message,
-    ...(err.errors?.length && { errors: err.errors }),
-    ...(config.env === 'development' && { stack: err.stack }),
+    ...(err.errors && err.errors.length && { errors: err.errors }),
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   };
 
   console.error(`❌ [${statusCode}] ${message}`);
-  if (config.env === 'development') {
+  if (process.env.NODE_ENV === 'development') {
     console.error(err.stack);
   }
 
-  res.status(statusCode).json(body);
+  res.status(statusCode).json(response);
 };
 
+export { notFound, errorHandler };
 export default errorHandler;
