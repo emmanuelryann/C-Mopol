@@ -4,42 +4,64 @@ const userSchema = new mongoose.Schema(
   {
     firstName: {
       type: String,
-      required: [true, 'First name is required'],
+      required: true,
       trim: true,
-      minlength: [2, 'First name must be at least 2 characters'],
-      maxlength: [50, 'First name cannot exceed 50 characters'],
+      maxlength: 50,
     },
+
     lastName: {
       type: String,
-      required: [true, 'Last name is required'],
+      required: true,
       trim: true,
-      minlength: [2, 'Last name must be at least 2 characters'],
-      maxlength: [50, 'Last name cannot exceed 50 characters'],
+      maxlength: 50,
     },
+
     email: {
       type: String,
-      required: [true, 'Email is required'],
+      required: true,
       unique: true,
       lowercase: true,
       trim: true,
-      match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email address'],
+      maxlength: 254,
     },
+
     password: {
       type: String,
-      required: [true, 'Password is required'],
-      minlength: [8, 'Password must be at least 8 characters'],
+      required: true,
       select: false,
     },
+
     role: {
       type: String,
       enum: ['customer', 'admin'],
       default: 'customer',
     },
+
     phone: {
       type: String,
+      trim: true,
+      default: null,
+    },
+
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    status: {
+      type: String,
+      enum: ['active', 'suspended', 'deleted'],
+      default: 'active',
+    },
+
+    lastLogin: {
+      type: Date,
+      default: null,
     },
   },
-  { timestamps: true },
+  {
+    timestamps: true,
+  },
 );
 
 const User = mongoose.model('User', userSchema);
