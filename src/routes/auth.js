@@ -60,13 +60,11 @@ router.post('/register', validate(createUser), async (req, res, next) => {
       return next(error);
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
-
     const user = await User.create({
       firstName,
       lastName,
       email,
-      password: hashedPassword,
+      password,
       phone: phone || null,
     });
 
@@ -304,7 +302,7 @@ router.post('/reset-password/:token', validate(resetPasswordSchema), async (req,
       return next(error);
     }
 
-    user.password = await bcrypt.hash(password, 12);
+    user.password = password;
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
     user.refreshToken = null;
