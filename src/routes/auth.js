@@ -10,6 +10,7 @@ import {
   loginUser,
   forgotPasswordSchema,
   resetPasswordSchema,
+  changePasswordSchema,
 } from '../middlewares/validation.js';
 
 const router = Router();
@@ -236,6 +237,38 @@ router.get('/me', authenticate, async (req, res, next) => {
           createdAt: req.user.createdAt,
         },
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Change Password (logged-in user)
+router.post('/change-password', authenticate, validate(changePasswordSchema), async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    const user = await User.findById(req.user._id).select('+password');
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      const error = new Error('Current password is incorrect.');
+      error.statusCode = 400;
+      return next(error);
+    }
+
+    if (currentPassword === newPassword) {
+      const error = new Error('New password cannot be the same as current password.');
+      error.statusCode = 400;
+      return next(error);
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Password changed successfully.',
     });
   } catch (err) {
     next(err);

@@ -58,6 +58,11 @@ const resetPasswordSchema = Joi.object({
   password: Joi.string().min(8).required(),
 });
 
+const changePasswordSchema = Joi.object({
+  currentPassword: Joi.string().required(),
+  newPassword: Joi.string().min(8).required(),
+});
+
 // ─────────────────────────────────────────────────────────────────
 //  CATEGORY
 // ─────────────────────────────────────────────────────────────────
@@ -237,6 +242,7 @@ export {
   loginUser,
   forgotPasswordSchema,
   resetPasswordSchema,
+  changePasswordSchema,
   createCategory,
   updateCategory,
   createProduct,
