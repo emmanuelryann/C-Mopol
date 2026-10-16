@@ -45,6 +45,19 @@ const updateUser = Joi.object({
   phone: Joi.string().allow(''),
 }).min(1);
 
+const loginUser = Joi.object({
+  email: Joi.string().email().lowercase().trim().required(),
+  password: Joi.string().required(),
+});
+
+const forgotPasswordSchema = Joi.object({
+  email: Joi.string().email().lowercase().trim().required(),
+});
+
+const resetPasswordSchema = Joi.object({
+  password: Joi.string().min(8).required(),
+});
+
 // ─────────────────────────────────────────────────────────────────
 //  CATEGORY
 // ─────────────────────────────────────────────────────────────────
@@ -221,6 +234,9 @@ export {
   validate,
   createUser,
   updateUser,
+  loginUser,
+  forgotPasswordSchema,
+  resetPasswordSchema,
   createCategory,
   updateCategory,
   createProduct,
