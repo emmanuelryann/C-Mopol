@@ -5,24 +5,29 @@ const userSchema = new mongoose.Schema(
   {
     firstName: {
       type: String,
+      required: true,
       trim: true,
     },
     lastName: {
       type: String,
+      required: true,
       trim: true,
     },
     email: {
       type: String,
+      required: true,
       unique: true,
       lowercase: true,
       trim: true,
     },
     password: {
       type: String,
+      required: true,
       select: false,
     },
     role: {
       type: String,
+      enum: ['customer', 'admin'],
       default: 'customer',
     },
     phone: {
@@ -36,6 +41,7 @@ const userSchema = new mongoose.Schema(
     },
     status: {
       type: String,
+      enum: ['active', 'suspended', 'deleted'],
       default: 'active',
     },
     lastLogin: {
@@ -48,9 +54,11 @@ const userSchema = new mongoose.Schema(
     },
     passwordResetToken: {
       type: String,
+      select: false,
     },
     passwordResetExpires: {
       type: Date,
+      select: false,
     },
   },
   { timestamps: true },

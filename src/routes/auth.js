@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import rateLimit from 'express-rate-limit';
 import User from '../models/user.js';
 import { authenticate } from '../middlewares/auth.js';
 import {
@@ -15,7 +16,24 @@ import {
 
 const router = Router();
 
+// ── Rate Limiter for Sensitive Auth Routes ──────────────────────
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,                   // 10 attempts per IP per 15 minutes
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many attempts. Please try again after 15 minutes.',
+  },
+});
+
 // ── Token Helpers ───────────────────────────────────────────────
+
+const hashToken = (token) => {
+  return crypto.createHash('sha256').update(token).digest('hex');
+};
 
 const generateAccessToken = (userId) => {
   return jwt.sign({ id: userId }, process.env.ACCESS_TOKEN_SECRET, {
@@ -26,6 +44,7 @@ const generateAccessToken = (userId) => {
 const generateRefreshToken = (userId) => {
   return jwt.sign({ id: userId }, process.env.REFRESH_TOKEN_SECRET, {
     expiresIn: '7d',
+    jwtid: crypto.randomUUID(),
   });
 };
 
@@ -72,8 +91,7 @@ router.post('/register', validate(createUser), async (req, res, next) => {
     const accessToken = generateAccessToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
-    const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
-    user.refreshToken = hashedRefreshToken;
+    user.refreshToken = hashToken(refreshToken);
     await user.save();
 
     setCookies(res, accessToken, refreshToken);
@@ -97,12 +115,20 @@ router.post('/register', validate(createUser), async (req, res, next) => {
 });
 
 // Login
-router.post('/login', validate(loginUser), async (req, res, next) => {
+router.post('/login', authLimiter, validate(loginUser), async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
     const user = await User.findOne({ email }).select('+password +refreshToken');
     if (!user) {
+      const error = new Error('Invalid email or password.');
+      error.statusCode = 401;
+      return next(error);
+    }
+
+    // Verify password before checking status to prevent account enumeration
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
       const error = new Error('Invalid email or password.');
       error.statusCode = 401;
       return next(error);
@@ -114,18 +140,10 @@ router.post('/login', validate(loginUser), async (req, res, next) => {
       return next(error);
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      const error = new Error('Invalid email or password.');
-      error.statusCode = 401;
-      return next(error);
-    }
-
     const accessToken = generateAccessToken(user._id);
     const refreshToken = generateRefreshToken(user._id);
 
-    const hashedRefreshToken = await bcrypt.hash(refreshToken, 10);
-    user.refreshToken = hashedRefreshToken;
+    user.refreshToken = hashToken(refreshToken);
     user.lastLogin = new Date();
     await user.save();
 
@@ -193,8 +211,8 @@ router.post('/refresh', async (req, res, next) => {
       return next(error);
     }
 
-    const isTokenValid = await bcrypt.compare(token, user.refreshToken);
-    if (!isTokenValid) {
+    // SHA-256 hash comparison instead of bcrypt (avoids 72-byte truncation bug)
+    if (hashToken(token) !== user.refreshToken) {
       const error = new Error('Invalid refresh token. Please log in again.');
       error.statusCode = 401;
       return next(error);
@@ -203,8 +221,7 @@ router.post('/refresh', async (req, res, next) => {
     const newAccessToken = generateAccessToken(user._id);
     const newRefreshToken = generateRefreshToken(user._id);
 
-    const hashedRefreshToken = await bcrypt.hash(newRefreshToken, 10);
-    user.refreshToken = hashedRefreshToken;
+    user.refreshToken = hashToken(newRefreshToken);
     await user.save();
 
     setCookies(res, newAccessToken, newRefreshToken);
@@ -248,7 +265,7 @@ router.post('/change-password', authenticate, validate(changePasswordSchema), as
   try {
     const { currentPassword, newPassword } = req.body;
 
-    const user = await User.findById(req.user._id).select('+password');
+    const user = await User.findById(req.user._id).select('+password +refreshToken');
 
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
@@ -264,7 +281,14 @@ router.post('/change-password', authenticate, validate(changePasswordSchema), as
     }
 
     user.password = newPassword;
+
+    // Issue new tokens and rotate refresh token to invalidate any other sessions
+    const accessToken = generateAccessToken(user._id);
+    const refreshToken = generateRefreshToken(user._id);
+    user.refreshToken = hashToken(refreshToken);
     await user.save();
+
+    setCookies(res, accessToken, refreshToken);
 
     res.status(200).json({
       success: true,
@@ -276,36 +300,34 @@ router.post('/change-password', authenticate, validate(changePasswordSchema), as
 });
 
 // Forgot Password
-router.post('/forgot-password', validate(forgotPasswordSchema), async (req, res, next) => {
+router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), async (req, res, next) => {
   try {
     const { email } = req.body;
 
     const user = await User.findOne({ email });
-    if (!user) {
-      const error = new Error('No account found with that email.');
-      error.statusCode = 404;
-      return next(error);
+
+    if (user) {
+      // Generate a random reset token
+      const resetToken = crypto.randomBytes(32).toString('hex');
+
+      // Hash it with SHA-256 and store on the user with a 10-minute expiry
+      user.passwordResetToken = crypto
+        .createHash('sha256')
+        .update(resetToken)
+        .digest('hex');
+      user.passwordResetExpires = Date.now() + 10 * 60 * 1000;
+      await user.save();
+
+      // Log in development for testing until an email service is integrated
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`\n🔑 [DEV ONLY] Password reset token for ${email}: ${resetToken}\n`);
+      }
     }
 
-    // Generate a random reset token
-    const resetToken = crypto.randomBytes(32).toString('hex');
-
-    // Hash it and store on the user with a 10-minute expiry
-    user.passwordResetToken = crypto
-      .createHash('sha256')
-      .update(resetToken)
-      .digest('hex');
-    user.passwordResetExpires = Date.now() + 10 * 60 * 1000;
-    await user.save();
-
-    // For now, return the token directly. When email is integrated,
-    // send it via email instead and remove it from the response.
+    // Always return a generic 200 response to prevent account enumeration
     res.status(200).json({
       success: true,
-      message: 'Password reset token generated.',
-      data: {
-        resetToken,
-      },
+      message: 'If an account with that email exists, a password reset link has been sent.',
     });
   } catch (err) {
     next(err);
@@ -313,12 +335,11 @@ router.post('/forgot-password', validate(forgotPasswordSchema), async (req, res,
 });
 
 // Reset Password
-router.post('/reset-password/:token', validate(resetPasswordSchema), async (req, res, next) => {
+router.post('/reset-password/:token', authLimiter, validate(resetPasswordSchema), async (req, res, next) => {
   try {
     const { token } = req.params;
     const { password } = req.body;
 
-    // Hash the incoming token to compare with the stored hash
     const hashedToken = crypto
       .createHash('sha256')
       .update(token)
@@ -327,7 +348,7 @@ router.post('/reset-password/:token', validate(resetPasswordSchema), async (req,
     const user = await User.findOne({
       passwordResetToken: hashedToken,
       passwordResetExpires: { $gt: Date.now() },
-    });
+    }).select('+passwordResetToken +passwordResetExpires');
 
     if (!user) {
       const error = new Error('Token is invalid or has expired.');
