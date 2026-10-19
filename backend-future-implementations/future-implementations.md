@@ -63,6 +63,17 @@ This document outlines backend features, security enhancements, integrations, an
   - Route `/api/v1/auth/oauth/google`.
   - Handle user creation/linkage without requiring passwords.
 
+### 1.6 Rate Limiting & Brute-Force Protection
+- **Status:** Pending / Deferred
+- **Description:** Implement layered rate limiting to protect the API from denial-of-service (DoS) attacks and brute-force credential stuffing.
+- **Tasks:**
+  - **Global API Rate Limiting:** Apply an `express-rate-limit` middleware across all `/api` routes (e.g. 100 requests per 15-minute window per IP) to prevent server resource exhaustion.
+  - **Auth Route Limiting:** Configure aggressive rate limiters on sensitive endpoints:
+    - `POST /api/v1/auth/login` (e.g., 5-10 attempts per 15 minutes to block password guessing).
+    - `POST /api/v1/auth/forgot-password` (e.g., 3-5 requests per hour to prevent email spamming).
+    - `POST /api/v1/auth/reset-password/:token` (e.g., 5 attempts per 15 minutes).
+  - **Redis Store for Distributed Rate Limiting:** Use `rate-limit-redis` to share rate-limit counters across multi-instance or clustered server deployments rather than keeping counts in single-process memory.
+
 ---
 
 ## 2. Core E-Commerce Modules (Phase 2 & 3)

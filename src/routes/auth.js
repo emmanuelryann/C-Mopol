@@ -2,7 +2,6 @@ import { Router } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import rateLimit from 'express-rate-limit';
 import User from '../models/user.js';
 import { authenticate } from '../middlewares/auth.js';
 import {
@@ -15,19 +14,6 @@ import {
 } from '../middlewares/validation.js';
 
 const router = Router();
-
-// ── Rate Limiter for Sensitive Auth Routes ──────────────────────
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,                   // 10 attempts per IP per 15 minutes
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: {
-    success: false,
-    message: 'Too many attempts. Please try again after 15 minutes.',
-  },
-});
 
 // ── Token Helpers ───────────────────────────────────────────────
 
@@ -115,7 +101,7 @@ router.post('/register', validate(createUser), async (req, res, next) => {
 });
 
 // Login
-router.post('/login', authLimiter, validate(loginUser), async (req, res, next) => {
+router.post('/login', validate(loginUser), async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
@@ -211,6 +197,12 @@ router.post('/refresh', async (req, res, next) => {
       return next(error);
     }
 
+    if (user.status !== 'active') {
+      const error = new Error('Your account has been suspended or deleted.');
+      error.statusCode = 403;
+      return next(error);
+    }
+
     // SHA-256 hash comparison instead of bcrypt (avoids 72-byte truncation bug)
     if (hashToken(token) !== user.refreshToken) {
       const error = new Error('Invalid refresh token. Please log in again.');
@@ -300,7 +292,7 @@ router.post('/change-password', authenticate, validate(changePasswordSchema), as
 });
 
 // Forgot Password
-router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), async (req, res, next) => {
+router.post('/forgot-password', validate(forgotPasswordSchema), async (req, res, next) => {
   try {
     const { email } = req.body;
 
@@ -335,7 +327,7 @@ router.post('/forgot-password', authLimiter, validate(forgotPasswordSchema), asy
 });
 
 // Reset Password
-router.post('/reset-password/:token', authLimiter, validate(resetPasswordSchema), async (req, res, next) => {
+router.post('/reset-password/:token', validate(resetPasswordSchema), async (req, res, next) => {
   try {
     const { token } = req.params;
     const { password } = req.body;
