@@ -109,7 +109,6 @@ const updateProduct = Joi.object({
   images: Joi.array().items(Joi.string()),
   stock: Joi.number().integer().min(0),
   sku: Joi.string(),
-  isActive: Joi.boolean(),
 }).min(1);
 
 // ─────────────────────────────────────────────────────────────────

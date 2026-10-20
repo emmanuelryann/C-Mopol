@@ -333,6 +333,9 @@ router.post('/', authenticate, authorize('admin'), validate(createProduct), asyn
 // Update a product
 router.patch('/:id', authenticate, authorize('admin'), validate(updateProduct), async (req, res, next) => {
   try {
+    // Prevent modifying active status via general update (use /restore or DELETE)
+    delete req.body.isActive;
+
     // Verify slug is unique if being changed
     if (req.body.slug) {
       const existingSlug = await Product.findOne({
