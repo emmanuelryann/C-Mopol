@@ -8,6 +8,8 @@ import cookieParser from 'cookie-parser';
 import connectDB from './config/db.js';
 import { notFound, errorHandler } from './middlewares/errorHandler.js';
 import authRoutes from './routes/auth.js';
+import categoryRoutes from './routes/category.js';
+import productRoutes from './routes/product.js';
 
 // Load environment variables
 dotenv.config();
@@ -48,6 +50,8 @@ app.get('/api/v1/health', (req, res) => {
 
 // Routes
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/categories', categoryRoutes);
+app.use('/api/v1/products', productRoutes);
 
 // Error handling middleware
 app.use(notFound);

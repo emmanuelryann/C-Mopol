@@ -4,18 +4,22 @@ const productSchema = new mongoose.Schema(
   {
     name: {
       type: String,
+      required: true,
       trim: true,
     },
     slug: {
       type: String,
+      required: true,
       unique: true,
       lowercase: true,
     },
     description: {
       type: String,
+      required: true,
     },
     price: {
       type: Number,
+      required: true,
     },
     compareAtPrice: {
       type: Number,
@@ -23,6 +27,7 @@ const productSchema = new mongoose.Schema(
     category: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Category',
+      required: true,
     },
     images: [
       {
@@ -48,6 +53,7 @@ const productSchema = new mongoose.Schema(
 
 productSchema.index({ category: 1 });
 productSchema.index({ price: 1 });
+productSchema.index({ name: 'text', description: 'text' });
 
 const Product = mongoose.model('Product', productSchema);
 
