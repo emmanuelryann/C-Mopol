@@ -1,5 +1,7 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import Category from '../models/category.js';
+import Product from '../models/product.js';
 import { authenticate, authorize } from '../middlewares/auth.js';
 import {
   validate,
@@ -11,20 +13,21 @@ const router = Router();
 
 // ── Public Routes ───────────────────────────────────────────────
 
-// List all categories (with optional parent filter and nested children)
+// List active categories (with optional parent filter)
 router.get('/', async (req, res, next) => {
   try {
-    const { parent, active } = req.query;
-    const filter = {};
+    const { parent } = req.query;
 
-    if (parent === 'null' || parent === 'root') {
-      filter.parent = null;
-    } else if (parent) {
-      filter.parent = parent;
+    // Public route only displays active categories
+    const filter = { isActive: true };
+
+    if (typeof parent === 'string') {
+      if (parent === 'null' || parent === 'root') {
+        filter.parent = null;
+      } else if (mongoose.isValidObjectId(parent)) {
+        filter.parent = parent;
+      }
     }
-
-    if (active === 'true') filter.isActive = true;
-    if (active === 'false') filter.isActive = false;
 
     const categories = await Category.find(filter)
       .populate('parent', 'name slug')
@@ -40,11 +43,13 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// Get a single category by ID
+// Get a single active category by ID
 router.get('/:id', async (req, res, next) => {
   try {
-    const category = await Category.findById(req.params.id)
-      .populate('parent', 'name slug');
+    const category = await Category.findOne({
+      _id: req.params.id,
+      isActive: true,
+    }).populate('parent', 'name slug');
 
     if (!category) {
       const error = new Error('Category not found.');
@@ -160,6 +165,14 @@ router.patch('/:id', authenticate, authorize('admin'), validate(updateCategory),
 // Delete a category
 router.delete('/:id', authenticate, authorize('admin'), async (req, res, next) => {
   try {
+    // Check if any products reference this category
+    const productCount = await Product.countDocuments({ category: req.params.id });
+    if (productCount > 0) {
+      const error = new Error(`Cannot delete this category. It has ${productCount} product(s).`);
+      error.statusCode = 400;
+      return next(error);
+    }
+
     // Check if any subcategories reference this category
     const childCount = await Category.countDocuments({ parent: req.params.id });
     if (childCount > 0) {

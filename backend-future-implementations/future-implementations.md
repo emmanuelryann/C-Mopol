@@ -79,20 +79,17 @@ This document outlines backend features, security enhancements, integrations, an
 ## 2. Core E-Commerce Modules (Phase 2 & 3)
 
 ### 2.1 Products & Catalog Management
-- **Status:** Models and Joi validation schemas ready
+- **Status:** Basic CRUD & search implemented; Image uploads deferred
 - **Tasks:**
-  - Product CRUD endpoints (`/api/v1/products`).
-  - Advanced search and filtering (query by category, price range, brand, availability, text search).
-  - Pagination, sorting (price asc/desc, newest, rating).
   - Media upload integration (Cloudinary or AWS S3) for product galleries.
-  - Inventory management (stock decrement on purchase, low-stock alerts).
+  - Low-stock alerts and threshold notifications.
+  - **Monetary Precision / Integer Currency:** Evaluate storing product prices as integers in the smallest currency unit (e.g., pesewas/cents/kobo) instead of floating-point numbers to prevent binary float rounding errors (`0.1 + 0.2 !== 0.3`).
 
 ### 2.2 Category Hierarchy
-- **Status:** Models and Joi validation schemas ready
+- **Status:** Basic CRUD implemented
 - **Tasks:**
-  - Category tree endpoints (`/api/v1/categories`).
-  - Support nested parent-child categories.
-  - Auto-generated slugs.
+  - Category tree endpoints (`/api/v1/categories/tree`).
+  - **Multi-Level Cycle Prevention:** Add recursive ancestry validation when updating category parents to prevent circular chains (e.g., A → B → A or A → B → C → A).
 
 ### 2.3 Cart & Guest Cart Synchronization
 - **Status:** Models and Joi validation schemas ready
@@ -106,7 +103,7 @@ This document outlines backend features, security enhancements, integrations, an
 - **Tasks:**
   - Order creation with transactional integrity (`mongoose` session / transaction).
   - Validate and lock in snapshot prices, discounts, taxes, and shipping rates at checkout.
-  - Reduce inventory counts atomically using MongoDB `$inc` operators with checks (`$gte: quantity`).
+  - **Atomic Inventory Updates:** Reduce stock quantities atomically during order placement using MongoDB `$inc: { stock: -qty }` combined with condition `{ stock: { $gte: qty } }` to eliminate race conditions where multiple buyers purchase the last available item simultaneously.
   - Order status state-machine (`pending` -> `confirmed` -> `processing` -> `shipped` -> `delivered` / `cancelled`).
 
 ### 2.5 Payment Gateway Integration
@@ -126,14 +123,21 @@ This document outlines backend features, security enhancements, integrations, an
 
 ## 3. Administration & Back-Office
 
-### 3.1 Admin User Management
+### 3.1 Admin Product & Category Management
+- **Status:** Pending
+- **Tasks:**
+  - Dedicated admin list endpoints (`GET /api/v1/admin/products` and `GET /api/v1/admin/categories`) protected with `authenticate, authorize('admin')` to view and filter all items, including inactive and archived records.
+  - Restore archived product endpoint (`PATCH /api/v1/products/:id/restore`).
+  - Bulk product status updates and bulk price/inventory adjustments.
+
+### 3.2 Admin User Management
 - **Status:** Pending
 - **Tasks:**
   - Endpoints to list users with filtering by status and role (`GET /api/v1/admin/users`).
   - Suspend / activate / soft-delete user accounts (`PATCH /api/v1/admin/users/:id/status`).
   - Role management (promoting staff to admin).
 
-### 3.2 Order Management for Staff
+### 3.3 Order Management for Staff
 - **Status:** Pending
 - **Tasks:**
   - Admin view of all platform orders.

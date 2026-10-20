@@ -108,7 +108,7 @@ const updateProduct = Joi.object({
   category: objectId,
   images: Joi.array().items(Joi.string()),
   stock: Joi.number().integer().min(0),
-  sku: Joi.string().allow(null),
+  sku: Joi.string(),
   isActive: Joi.boolean(),
 }).min(1);
 

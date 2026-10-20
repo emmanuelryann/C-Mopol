@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import mongoose from 'mongoose';
 import Product from '../models/product.js';
 import Category from '../models/category.js';
 import { authenticate, authorize } from '../middlewares/auth.js';
@@ -12,7 +13,7 @@ const router = Router();
 
 // ── Public Routes ───────────────────────────────────────────────
 
-// List products with pagination, search, filtering, and sorting
+// List active products with pagination, search, filtering, and sorting
 router.get('/', async (req, res, next) => {
   try {
     const {
@@ -22,7 +23,6 @@ router.get('/', async (req, res, next) => {
       category,
       minPrice,
       maxPrice,
-      active,
       inStock,
       sort = '-createdAt',
     } = req.query;
@@ -31,30 +31,28 @@ router.get('/', async (req, res, next) => {
     const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 10));
     const skip = (pageNum - 1) * limitNum;
 
-    const filter = {};
+    // Public route only displays active products
+    const filter = { isActive: true };
 
-    // Text search
-    if (search) {
-      filter.$text = { $search: search };
+    // Text search (safe string check)
+    if (typeof search === 'string' && search.trim()) {
+      filter.$text = { $search: search.trim() };
     }
 
-    // Filter by category
-    if (category) {
+    // Filter by category (safe ObjectId check prevents NoSQL injection)
+    if (typeof category === 'string' && mongoose.isValidObjectId(category)) {
       filter.category = category;
     }
 
-    // Filter by price range
-    if (minPrice || maxPrice) {
-      filter.price = {};
-      if (minPrice) filter.price.$gte = parseFloat(minPrice);
-      if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
-    }
-
-    // Filter by active status (public listings default to active only)
-    if (active === 'false') {
-      filter.isActive = false;
-    } else {
-      filter.isActive = true;
+    // Filter by price range (safe numeric conversion)
+    if (minPrice !== undefined || maxPrice !== undefined) {
+      const min = parseFloat(minPrice);
+      const max = parseFloat(maxPrice);
+      if (!isNaN(min) || !isNaN(max)) {
+        filter.price = {};
+        if (!isNaN(min)) filter.price.$gte = min;
+        if (!isNaN(max)) filter.price.$lte = max;
+      }
     }
 
     // Filter by stock availability
@@ -62,15 +60,20 @@ router.get('/', async (req, res, next) => {
       filter.stock = { $gt: 0 };
     }
 
-    // Build sort object
+    // Safe sorting with allowed field whitelist
+    const allowedSort = ['createdAt', 'price', 'name'];
     const sortOptions = {};
-    const sortFields = sort.split(',');
-    for (const field of sortFields) {
-      if (field.startsWith('-')) {
-        sortOptions[field.slice(1)] = -1;
-      } else {
-        sortOptions[field] = 1;
-      }
+    String(sort)
+      .split(',')
+      .forEach((field) => {
+        const trimmed = field.trim();
+        const key = trimmed.startsWith('-') ? trimmed.slice(1) : trimmed;
+        if (allowedSort.includes(key)) {
+          sortOptions[key] = trimmed.startsWith('-') ? -1 : 1;
+        }
+      });
+    if (Object.keys(sortOptions).length === 0) {
+      sortOptions.createdAt = -1;
     }
 
     const [products, total] = await Promise.all([
@@ -104,11 +107,13 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-// Get a single product by ID
+// Get a single active product by ID
 router.get('/:id', async (req, res, next) => {
   try {
-    const product = await Product.findById(req.params.id)
-      .populate('category', 'name slug');
+    const product = await Product.findOne({
+      _id: req.params.id,
+      isActive: true,
+    }).populate('category', 'name slug');
 
     if (!product) {
       const error = new Error('Product not found.');
@@ -158,13 +163,6 @@ router.post('/', authenticate, authorize('admin'), validate(createProduct), asyn
     }
     if (!category.isActive) {
       const error = new Error('Cannot assign product to an inactive category.');
-      error.statusCode = 400;
-      return next(error);
-    }
-
-    // Stock validation
-    if (req.body.stock !== undefined && req.body.stock < 0) {
-      const error = new Error('Stock quantity cannot be negative.');
       error.statusCode = 400;
       return next(error);
     }
@@ -232,13 +230,6 @@ router.patch('/:id', authenticate, authorize('admin'), validate(updateProduct), 
         error.statusCode = 400;
         return next(error);
       }
-    }
-
-    // Stock validation
-    if (req.body.stock !== undefined && req.body.stock < 0) {
-      const error = new Error('Stock quantity cannot be negative.');
-      error.statusCode = 400;
-      return next(error);
     }
 
     // Compare-at price validation (need the existing product to compare)
