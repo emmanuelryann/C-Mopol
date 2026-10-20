@@ -79,17 +79,18 @@ This document outlines backend features, security enhancements, integrations, an
 ## 2. Core E-Commerce Modules (Phase 2 & 3)
 
 ### 2.1 Products & Catalog Management
-- **Status:** Basic CRUD & search implemented; Image uploads deferred
+- **Status:** Basic CRUD, search, active filtering & admin routes implemented; Image uploads deferred
 - **Tasks:**
   - Media upload integration (Cloudinary or AWS S3) for product galleries.
   - Low-stock alerts and threshold notifications.
-  - **Monetary Precision / Integer Currency:** Evaluate storing product prices as integers in the smallest currency unit (e.g., pesewas/cents/kobo) instead of floating-point numbers to prevent binary float rounding errors (`0.1 + 0.2 !== 0.3`).
+  - **Monetary Precision / Integer Currency:** Store product prices as integers in the smallest currency unit (e.g., pesewas/cents/kobo) instead of floating-point numbers to prevent binary float rounding errors (`0.1 + 0.2 !== 0.3`).
+  - **Category-Product Cascading State:** Currently, public product queries dynamically exclude products assigned to inactive categories. As a future enhancement, consider optional automatic cascading: deactivating a category could prompt whether to deactivate all its associated products in the database.
 
 ### 2.2 Category Hierarchy
-- **Status:** Basic CRUD implemented
+- **Status:** Basic CRUD, parent hierarchy, cycle prevention & admin routes implemented
 - **Tasks:**
-  - Category tree endpoints (`/api/v1/categories/tree`).
-  - **Multi-Level Cycle Prevention:** Add recursive ancestry validation when updating category parents to prevent circular chains (e.g., A → B → A or A → B → C → A).
+  - Category tree endpoints (`/api/v1/categories/tree`) returning fully assembled nested JSON trees for frontend navigation menus.
+  - **Product Reassignment Helper:** Since category deletion is strictly blocked when referenced by active OR archived products, provide a bulk reassignment endpoint (`PATCH /api/v1/categories/:id/reassign-products`) to move all products to a new category before deleting.
 
 ### 2.3 Cart & Guest Cart Synchronization
 - **Status:** Models and Joi validation schemas ready
@@ -103,7 +104,19 @@ This document outlines backend features, security enhancements, integrations, an
 - **Tasks:**
   - Order creation with transactional integrity (`mongoose` session / transaction).
   - Validate and lock in snapshot prices, discounts, taxes, and shipping rates at checkout.
-  - **Atomic Inventory Updates:** Reduce stock quantities atomically during order placement using MongoDB `$inc: { stock: -qty }` combined with condition `{ stock: { $gte: qty } }` to eliminate race conditions where multiple buyers purchase the last available item simultaneously.
+  - **Atomic Inventory Updates at Checkout:**
+    - Admins update stock to absolute values via `PATCH /api/v1/products/:id`.
+    - At checkout, decrement stock atomically using MongoDB `$inc` with an inventory guard condition to eliminate race conditions:
+      ```javascript
+      const result = await Product.updateOne(
+        { _id: item.productId, stock: { $gte: item.quantity } },
+        { $inc: { stock: -item.quantity } }
+      );
+      if (result.matchedCount === 0) {
+        throw new Error(`Insufficient stock for item: ${item.name}`);
+      }
+      ```
+    - Rollback stock using `$inc: { stock: item.quantity }` if payment or order creation fails.
   - Order status state-machine (`pending` -> `confirmed` -> `processing` -> `shipped` -> `delivered` / `cancelled`).
 
 ### 2.5 Payment Gateway Integration
@@ -124,10 +137,9 @@ This document outlines backend features, security enhancements, integrations, an
 ## 3. Administration & Back-Office
 
 ### 3.1 Admin Product & Category Management
-- **Status:** Pending
+- **Status:** Implemented (`/admin` listing, `/admin/:id` lookup, `/:id/restore` restore)
 - **Tasks:**
-  - Dedicated admin list endpoints (`GET /api/v1/admin/products` and `GET /api/v1/admin/categories`) protected with `authenticate, authorize('admin')` to view and filter all items, including inactive and archived records.
-  - Restore archived product endpoint (`PATCH /api/v1/products/:id/restore`).
+  - Admin dashboard metrics (total inventory valuation, low stock warnings, active vs. archived breakdown).
   - Bulk product status updates and bulk price/inventory adjustments.
 
 ### 3.2 Admin User Management
