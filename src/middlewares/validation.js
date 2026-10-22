@@ -1,7 +1,7 @@
 import Joi from 'joi';
 
 // ── Helper ──────────────────────────────────────────────────────
-const objectId = Joi.string().pattern(/^[0-9a-fA-F]{24}$/, 'ObjectId');
+const objectId = Joi.string().lowercase().pattern(/^[0-9a-fA-F]{24}$/, 'ObjectId');
 
 /**
  * Validation middleware factory.

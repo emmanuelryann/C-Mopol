@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import Cart from '../models/cart.js';
 import Product from '../models/product.js';
-import Category from '../models/category.js';
 import { authenticate } from '../middlewares/auth.js';
 import { validate, addToCart, updateCartItem } from '../middlewares/validation.js';
 
@@ -19,6 +18,12 @@ router.use(authenticate);
  * alongside computed totals.
  */
 const buildCartResponse = async (cart) => {
+  // Capture raw product IDs before population so that if any product was
+  // hard-deleted, its ID is preserved for individual removal from the cart.
+  const rawProductIds = cart.items.map((item) =>
+    (item.product?._id || item.product).toString(),
+  );
+
   await cart.populate({
     path: 'items.product',
     select: 'name slug price compareAtPrice images stock isActive category',
@@ -35,12 +40,14 @@ const buildCartResponse = async (cart) => {
   const validItems = [];
   const unavailableItems = [];
 
-  for (const item of cart.items) {
+  for (let idx = 0; idx < cart.items.length; idx++) {
+    const item = cart.items[idx];
     const product = item.product;
+    const rawProductId = rawProductIds[idx];
 
     if (!product || !product.isActive || !product.category || !product.category.isActive) {
       unavailableItems.push({
-        product: product?._id || item.product,
+        product: product?._id?.toString() || rawProductId,
         reason: !product
           ? 'Product no longer exists.'
           : !product.isActive
@@ -165,7 +172,27 @@ router.post('/items', validate(addToCart), async (req, res, next) => {
       cart.items.push({ product: productId, quantity });
     }
 
-    await cart.save();
+    try {
+      await cart.save();
+    } catch (saveErr) {
+      // Handle double-click race: if concurrent request created the cart first
+      if (saveErr.code === 11000) {
+        cart = await Cart.findOne({ user: req.user._id });
+        if (!cart) throw saveErr;
+
+        const raceItem = cart.items.find(
+          (item) => item.product.toString() === productId,
+        );
+        if (raceItem) {
+          raceItem.quantity = Math.min(product.stock, raceItem.quantity + quantity);
+        } else {
+          cart.items.push({ product: productId, quantity });
+        }
+        await cart.save();
+      } else {
+        throw saveErr;
+      }
+    }
 
     const cartData = await buildCartResponse(cart);
 
@@ -185,7 +212,7 @@ router.post('/items', validate(addToCart), async (req, res, next) => {
 
 router.patch('/items/:productId', validate(updateCartItem), async (req, res, next) => {
   try {
-    const { productId } = req.params;
+    const productId = req.params.productId.toLowerCase();
     const { quantity } = req.body;
 
     const cart = await Cart.findOne({ user: req.user._id });
@@ -206,11 +233,17 @@ router.patch('/items/:productId', validate(updateCartItem), async (req, res, nex
       return next(error);
     }
 
-    // Validate stock against the requested quantity
-    const product = await Product.findById(productId);
+    // Validate product and category availability
+    const product = await Product.findById(productId).populate('category', 'isActive');
 
     if (!product || !product.isActive) {
       const error = new Error('Product is no longer available.');
+      error.statusCode = 400;
+      return next(error);
+    }
+
+    if (!product.category || !product.category.isActive) {
+      const error = new Error('This product is currently unavailable.');
       error.statusCode = 400;
       return next(error);
     }
@@ -242,7 +275,7 @@ router.patch('/items/:productId', validate(updateCartItem), async (req, res, nex
 
 router.delete('/items/:productId', async (req, res, next) => {
   try {
-    const { productId } = req.params;
+    const productId = req.params.productId.toLowerCase();
 
     const cart = await Cart.findOne({ user: req.user._id });
 

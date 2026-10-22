@@ -93,11 +93,12 @@ This document outlines backend features, security enhancements, integrations, an
   - **Product Reassignment Helper:** Since category deletion is strictly blocked when referenced by active OR archived products, provide a bulk reassignment endpoint (`PATCH /api/v1/categories/:id/reassign-products`) to move all products to a new category before deleting.
 
 ### 2.3 Cart & Guest Cart Synchronization
-- **Status:** Models and Joi validation schemas ready
+- **Status:** Authenticated cart CRUD, stock validation, stale item detection & case-insensitive ID handling implemented; Guest cart merge pending
 - **Tasks:**
-  - Authenticated cart CRUD (`/api/v1/cart`).
+  - Authenticated cart CRUD (`/api/v1/cart`) with server-side pricing and inventory checks.
+  - Case-insensitive ObjectId normalization in Joi validation and route parameters to prevent duplicate items.
   - Support for guest cart merging: when a guest user logs in, merge their local cart items into their database cart.
-  - Server-side inventory checks before adding items or updating quantities.
+  - Cart abandonment tracking / reminders for marketing automations.
 
 ### 2.4 Checkout, Orders & Pricing Snapshots
 - **Status:** Models and Joi validation schemas ready
