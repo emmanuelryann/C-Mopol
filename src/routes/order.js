@@ -162,15 +162,30 @@ router.patch('/admin/:id/status', authorize('admin'), validate(updateOrderStatus
       return next(error);
     }
 
-    order.status = status;
-
-    // Handle cancellation: restore stock
+    const updateFields = { status };
     if (status === 'cancelled') {
-      order.cancelledAt = new Date();
-      order.cancellationReason = cancellationReason || 'Cancelled by admin.';
+      updateFields.cancelledAt = new Date();
+      updateFields.cancellationReason = cancellationReason || 'Cancelled by admin.';
+    }
 
-      // Restore stock for each item
-      const stockOps = order.items.map((item) =>
+    // Atomically update only if status has not changed concurrently
+    const updatedOrder = await Order.findOneAndUpdate(
+      { _id: req.params.id, status: order.status },
+      updateFields,
+      { new: true },
+    );
+
+    if (!updatedOrder) {
+      const error = new Error(
+        'Order status was modified by another request. Please refresh and try again.',
+      );
+      error.statusCode = 409;
+      return next(error);
+    }
+
+    // Restore stock only if transitioning to cancelled or failed
+    if (status === 'cancelled' || status === 'failed') {
+      const stockOps = updatedOrder.items.map((item) =>
         Product.updateOne(
           { _id: item.product },
           { $inc: { stock: item.quantity } },
@@ -178,25 +193,11 @@ router.patch('/admin/:id/status', authorize('admin'), validate(updateOrderStatus
       );
       await Promise.all(stockOps);
     }
-
-    // Mark as failed
-    if (status === 'failed') {
-      // Restore stock for each item
-      const stockOps = order.items.map((item) =>
-        Product.updateOne(
-          { _id: item.product },
-          { $inc: { stock: item.quantity } },
-        ),
-      );
-      await Promise.all(stockOps);
-    }
-
-    await order.save();
 
     res.status(200).json({
       success: true,
       message: `Order status updated to "${status}".`,
-      data: { order },
+      data: { order: updatedOrder },
     });
   } catch (err) {
     next(err);
@@ -256,6 +257,7 @@ router.post('/checkout', validate(checkout), async (req, res, next) => {
     // ── 3. Fetch current product data and validate ───────────
     const productIds = cart.items.map((item) => item.product);
     const products = await Product.find({ _id: { $in: productIds } })
+      .populate('category', 'isActive')
       .session(session);
 
     // Build a lookup map
@@ -276,6 +278,11 @@ router.post('/checkout', validate(checkout), async (req, res, next) => {
       }
 
       if (!product.isActive) {
+        stockErrors.push(`"${product.name}" is no longer available.`);
+        continue;
+      }
+
+      if (!product.category || !product.category.isActive) {
         stockErrors.push(`"${product.name}" is no longer available.`);
         continue;
       }
@@ -343,7 +350,7 @@ router.post('/checkout', validate(checkout), async (req, res, next) => {
           tax,
           totalAmount,
           status: 'pending',
-          paymentStatus: paymentMethod === 'cash_on_delivery' ? 'pending' : 'pending',
+          paymentStatus: 'pending',
           paymentMethod,
           notes: notes || undefined,
         },
@@ -365,6 +372,15 @@ router.post('/checkout', validate(checkout), async (req, res, next) => {
     });
   } catch (err) {
     await session.abortTransaction();
+
+    // Helpful message if running against a standalone local MongoDB without replica set
+    if (err.message && err.message.includes('Transaction numbers are only allowed on a replica set member')) {
+      const replicaErr = new Error(
+        'Database transaction failed: MongoDB replica set is required for checkout transactions. Use MongoDB Atlas or enable a single-node replica set locally.',
+      );
+      replicaErr.statusCode = 500;
+      return next(replicaErr);
+    }
 
     // Pass structured errors through
     if (err.statusCode) {
@@ -472,40 +488,34 @@ router.get('/:id', async (req, res, next) => {
 // PATCH /:id/cancel — Customer cancels their own pending order
 router.patch('/:id/cancel', validate(cancelOrder), async (req, res, next) => {
   try {
-    const order = await Order.findOne({
-      _id: req.params.id,
-      user: req.user._id,
-    });
+    const order = await Order.findOneAndUpdate(
+      { _id: req.params.id, user: req.user._id, status: 'pending' },
+      {
+        status: 'cancelled',
+        cancelledAt: new Date(),
+        cancellationReason: req.body.reason || 'Cancelled by customer.',
+      },
+      { new: true },
+    );
 
     if (!order) {
-      const error = new Error('Order not found.');
-      error.statusCode = 404;
-      return next(error);
-    }
-
-    // Customers can only cancel orders that are still pending
-    if (order.status !== 'pending') {
+      const exists = await Order.exists({ _id: req.params.id, user: req.user._id });
       const error = new Error(
-        `Cannot cancel an order with status "${order.status}". Contact support for assistance.`,
+        exists ? 'Only pending orders can be cancelled.' : 'Order not found.',
       );
-      error.statusCode = 400;
+      error.statusCode = exists ? 400 : 404;
       return next(error);
     }
 
-    order.status = 'cancelled';
-    order.cancelledAt = new Date();
-    order.cancellationReason = req.body.reason || 'Cancelled by customer.';
-
-    // Restore stock for each item
-    const stockOps = order.items.map((item) =>
-      Product.updateOne(
-        { _id: item.product },
-        { $inc: { stock: item.quantity } },
+    // Only the request that actually changed the status gets here
+    await Promise.all(
+      order.items.map((item) =>
+        Product.updateOne(
+          { _id: item.product },
+          { $inc: { stock: item.quantity } },
+        ),
       ),
     );
-    await Promise.all(stockOps);
-
-    await order.save();
 
     res.status(200).json({
       success: true,

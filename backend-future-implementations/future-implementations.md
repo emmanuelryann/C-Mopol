@@ -101,8 +101,9 @@ This document outlines backend features, security enhancements, integrations, an
   - Cart abandonment tracking / reminders for marketing automations.
 
 ### 2.4 Checkout, Orders & Pricing Snapshots
-- **Status:** Implemented — transactional checkout, atomic `$inc` stock, order status state machine, admin order management, customer cancellation with stock restoration
+- **Status:** Implemented — transactional checkout, atomic `$inc` stock, order status state machine, admin order management, atomic customer cancellation with stock restoration
 - **Tasks:**
+  - **Auto-Cancel Unpaid Orders & Stock Release:** Orders paid by card, mobile money, or bank transfer remain `pending` with stock held until payment confirmation. Implement a scheduled cron job or TTL worker to automatically cancel orders and restore stock if payment is not completed within a time window (e.g., 30–60 minutes).
   - **Shipping Fee Calculator:** Currently hardcoded to 0. Integrate a shipping cost calculator based on address, weight, or flat rates.
   - **Tax Engine:** Currently hardcoded to 0. Integrate tax calculation based on jurisdiction/product type.
   - **Discount / Coupon System:** Apply promo codes or cart-level discounts at checkout, validated and computed server-side.
@@ -164,9 +165,10 @@ This document outlines backend features, security enhancements, integrations, an
   - Cache high-traffic read-heavy endpoints (e.g. Category tree, Featured Products, Home page banners).
   - Cache invalidation hooks on product/category creation or modification.
 
-### 4.3 Database Optimization
+### 4.3 Database Optimization & Environment Requirements
 - **Status:** Basic indexes configured
 - **Tasks:**
+  - **Replica Set for Multi-Document Transactions:** MongoDB transactions (used in checkout) require a replica set member. MongoDB Atlas supports this by default. For local development with a standalone `mongod`, initialize a single-node replica set (`mongod --replSet rs0` followed by `rs.initiate()`) or connect to Atlas.
   - Compound indexes for frequent queries (e.g., `category + price`, `user + status`).
   - Text search index on product titles and descriptions.
   - Scheduled backups and automated health ping for MongoDB connection.

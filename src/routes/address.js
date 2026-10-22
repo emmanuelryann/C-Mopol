@@ -104,6 +104,20 @@ router.patch('/:id', validate(updateAddress), async (req, res, next) => {
         { user: req.user._id, _id: { $ne: address._id }, isDefault: true },
         { isDefault: false },
       );
+    } else if (req.body.isDefault === false && address.isDefault) {
+      // If unsetting the current default, promote another address if available
+      const anotherAddress = await Address.findOne({
+        user: req.user._id,
+        _id: { $ne: address._id },
+      }).sort({ createdAt: -1 });
+
+      if (anotherAddress) {
+        anotherAddress.isDefault = true;
+        await anotherAddress.save();
+      } else {
+        // User has only one address, so it must remain default
+        req.body.isDefault = true;
+      }
     }
 
     Object.assign(address, req.body);
