@@ -199,6 +199,21 @@ const cancelOrder = Joi.object({
 });
 
 // ─────────────────────────────────────────────────────────────────
+//  ADMIN
+// ─────────────────────────────────────────────────────────────────
+
+const adminUpdateUser = Joi.object({
+  role: Joi.string().valid('customer', 'admin'),
+  status: Joi.string().valid('active', 'suspended', 'deleted'),
+}).min(1);
+
+const adminUpdatePaymentStatus = Joi.object({
+  paymentStatus: Joi.string()
+    .valid('pending', 'completed', 'failed', 'refunded')
+    .required(),
+});
+
+// ─────────────────────────────────────────────────────────────────
 //  EXPORTS
 // ─────────────────────────────────────────────────────────────────
 
@@ -221,4 +236,6 @@ export {
   checkout,
   updateOrderStatus,
   cancelOrder,
+  adminUpdateUser,
+  adminUpdatePaymentStatus,
 };

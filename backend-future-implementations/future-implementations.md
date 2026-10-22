@@ -129,25 +129,26 @@ This document outlines backend features, security enhancements, integrations, an
 
 ## 3. Administration & Back-Office
 
-### 3.1 Admin Product & Category Management
-- **Status:** Implemented (`/admin` listing, `/admin/:id` lookup, `/:id/restore` restore)
+### 3.1 Admin Dashboard & Inventory
+- **Status:** Implemented — dashboard statistics, inventory monitoring with stock level filtering and valuation
 - **Tasks:**
-  - Admin dashboard metrics (total inventory valuation, low stock warnings, active vs. archived breakdown).
+  - Dashboard widgets for revenue by time period (daily/weekly/monthly charts).
+  - Configurable low-stock threshold (currently hardcoded to 10 units).
+  - Low-stock email/webhook alerts.
   - Bulk product status updates and bulk price/inventory adjustments.
 
 ### 3.2 Admin User Management
-- **Status:** Pending
+- **Status:** Implemented — list, view (with order stats), update role/status, session invalidation on suspend/delete
 - **Tasks:**
-  - Endpoints to list users with filtering by status and role (`GET /api/v1/admin/users`).
-  - Suspend / activate / soft-delete user accounts (`PATCH /api/v1/admin/users/:id/status`).
-  - Role management (promoting staff to admin).
+  - Admin audit log (who changed what and when).
+  - Bulk user status updates.
 
-### 3.3 Order Management for Staff
-- **Status:** Pending
+### 3.3 Order & Payment Management
+- **Status:** Implemented — admin order listing/detail/status updates (in order routes), payment status updates (in admin routes)
 - **Tasks:**
-  - Admin view of all platform orders.
   - Bulk order status updates and tracking number assignment.
   - Issue refunds via payment gateway API.
+  - Order export (CSV/PDF).
 
 ---
 

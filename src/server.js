@@ -13,6 +13,7 @@ import productRoutes from './routes/product.js';
 import cartRoutes from './routes/cart.js';
 import addressRoutes from './routes/address.js';
 import orderRoutes from './routes/order.js';
+import adminRoutes from './routes/admin.js';
 
 // Load environment variables
 dotenv.config();
@@ -58,6 +59,7 @@ app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/cart', cartRoutes);
 app.use('/api/v1/addresses', addressRoutes);
 app.use('/api/v1/orders', orderRoutes);
+app.use('/api/v1/admin', adminRoutes);
 
 // Error handling middleware
 app.use(notFound);
