@@ -11,6 +11,8 @@ import authRoutes from './routes/auth.js';
 import categoryRoutes from './routes/category.js';
 import productRoutes from './routes/product.js';
 import cartRoutes from './routes/cart.js';
+import addressRoutes from './routes/address.js';
+import orderRoutes from './routes/order.js';
 
 // Load environment variables
 dotenv.config();
@@ -54,6 +56,8 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/categories', categoryRoutes);
 app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/cart', cartRoutes);
+app.use('/api/v1/addresses', addressRoutes);
+app.use('/api/v1/orders', orderRoutes);
 
 // Error handling middleware
 app.use(notFound);

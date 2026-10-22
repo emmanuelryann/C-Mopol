@@ -101,37 +101,28 @@ This document outlines backend features, security enhancements, integrations, an
   - Cart abandonment tracking / reminders for marketing automations.
 
 ### 2.4 Checkout, Orders & Pricing Snapshots
-- **Status:** Models and Joi validation schemas ready
+- **Status:** Implemented — transactional checkout, atomic `$inc` stock, order status state machine, admin order management, customer cancellation with stock restoration
 - **Tasks:**
-  - Order creation with transactional integrity (`mongoose` session / transaction).
-  - Validate and lock in snapshot prices, discounts, taxes, and shipping rates at checkout.
-  - **Atomic Inventory Updates at Checkout:**
-    - Admins update stock to absolute values via `PATCH /api/v1/products/:id`.
-    - At checkout, decrement stock atomically using MongoDB `$inc` with an inventory guard condition to eliminate race conditions:
-      ```javascript
-      const result = await Product.updateOne(
-        { _id: item.productId, stock: { $gte: item.quantity } },
-        { $inc: { stock: -item.quantity } }
-      );
-      if (result.matchedCount === 0) {
-        throw new Error(`Insufficient stock for item: ${item.name}`);
-      }
-      ```
-    - Rollback stock using `$inc: { stock: item.quantity }` if payment or order creation fails.
-  - Order status state-machine (`pending` -> `confirmed` -> `processing` -> `shipped` -> `delivered` / `cancelled`).
+  - **Shipping Fee Calculator:** Currently hardcoded to 0. Integrate a shipping cost calculator based on address, weight, or flat rates.
+  - **Tax Engine:** Currently hardcoded to 0. Integrate tax calculation based on jurisdiction/product type.
+  - **Discount / Coupon System:** Apply promo codes or cart-level discounts at checkout, validated and computed server-side.
+  - **Order Confirmation Emails:** Send order receipt to customer after successful checkout (depends on email service integration).
+  - **Shipping Tracking:** Add `trackingNumber` and `carrier` fields; allow admin to attach tracking info when marking as shipped.
+  - **Returns & Refunds:** Customer-initiated return requests with approval workflow and stock restoration.
 
 ### 2.5 Payment Gateway Integration
-- **Status:** Models and Joi validation schemas ready
+- **Status:** Payment status tracked on Order model; gateway integration pending
 - **Tasks:**
   - Stripe / Paystack / Flutterwave integration.
   - Secure webhook endpoint (`/api/v1/payments/webhook`) with signature verification to handle asynchronous payment confirmations, refunds, and failures.
   - Idempotency handling on payment charges.
+  - Migrate `Payment` model to active use or remove if payments remain embedded on Order.
 
 ### 2.6 Address Book
-- **Status:** Models and Joi validation schemas ready
+- **Status:** Implemented — full CRUD with default address management
 - **Tasks:**
-  - Customer address management (`/api/v1/addresses`).
-  - Set default shipping and billing addresses.
+  - Separate default shipping and default billing addresses.
+  - Address validation via third-party geocoding API.
 
 ---
 

@@ -116,40 +116,34 @@ const updateProduct = Joi.object({
 // ─────────────────────────────────────────────────────────────────
 
 const createAddress = Joi.object({
-  user: objectId.required(),
   label: Joi.string().valid('home', 'work', 'other'),
-  fullName: Joi.string().required(),
-  phone: Joi.string().required(),
-  addressLine1: Joi.string().required(),
+  fullName: Joi.string().trim().required(),
+  phone: Joi.string().trim().required(),
+  addressLine1: Joi.string().trim().required(),
   addressLine2: Joi.string().allow(''),
-  city: Joi.string().required(),
-  state: Joi.string().required(),
-  postalCode: Joi.string().required(),
-  country: Joi.string().required(),
+  city: Joi.string().trim().required(),
+  state: Joi.string().trim().required(),
+  postalCode: Joi.string().trim().required(),
+  country: Joi.string().trim().required(),
   isDefault: Joi.boolean(),
 });
 
 const updateAddress = Joi.object({
   label: Joi.string().valid('home', 'work', 'other'),
-  fullName: Joi.string(),
-  phone: Joi.string(),
-  addressLine1: Joi.string(),
+  fullName: Joi.string().trim(),
+  phone: Joi.string().trim(),
+  addressLine1: Joi.string().trim(),
   addressLine2: Joi.string().allow(''),
-  city: Joi.string(),
-  state: Joi.string(),
-  postalCode: Joi.string(),
-  country: Joi.string(),
+  city: Joi.string().trim(),
+  state: Joi.string().trim(),
+  postalCode: Joi.string().trim(),
+  country: Joi.string().trim(),
   isDefault: Joi.boolean(),
 }).min(1);
 
 // ─────────────────────────────────────────────────────────────────
 //  CART
 // ─────────────────────────────────────────────────────────────────
-
-const cartItem = Joi.object({
-  product: objectId.required(),
-  quantity: Joi.number().integer().min(1).required(),
-});
 
 const addToCart = Joi.object({
   product: objectId.required(),
@@ -161,73 +155,48 @@ const updateCartItem = Joi.object({
 });
 
 // ─────────────────────────────────────────────────────────────────
-//  ORDER
+//  ORDER / CHECKOUT
 // ─────────────────────────────────────────────────────────────────
 
-const orderItem = Joi.object({
-  product: objectId.required(),
-  name: Joi.string().required(),
-  price: Joi.number().required(),
-  quantity: Joi.number().integer().min(1).required(),
-  image: Joi.string().allow(''),
-});
-
+// Inline shipping address for checkout (when not using a saved address)
 const shippingAddress = Joi.object({
-  fullName: Joi.string().required(),
-  phone: Joi.string().required(),
-  addressLine1: Joi.string().required(),
+  fullName: Joi.string().trim().required(),
+  phone: Joi.string().trim().required(),
+  addressLine1: Joi.string().trim().required(),
   addressLine2: Joi.string().allow(''),
-  city: Joi.string().required(),
-  state: Joi.string().required(),
-  postalCode: Joi.string().required(),
-  country: Joi.string().required(),
+  city: Joi.string().trim().required(),
+  state: Joi.string().trim().required(),
+  postalCode: Joi.string().trim().required(),
+  country: Joi.string().trim().required(),
 });
 
-const createOrder = Joi.object({
-  user: objectId.required(),
-  orderNumber: Joi.string().required(),
-  items: Joi.array().items(orderItem).min(1).required(),
-  shippingAddress: shippingAddress.required(),
-  itemsTotal: Joi.number().required(),
-  shippingFee: Joi.number().min(0),
-  tax: Joi.number().min(0),
-  totalAmount: Joi.number().required(),
-  status: Joi.string().valid(
-    'pending', 'confirmed', 'processing', 'shipped',
-    'delivered', 'cancelled', 'refunded',
-  ),
-});
+// Checkout: client supplies address + payment method, server computes everything else
+const checkout = Joi.object({
+  addressId: objectId,
+  shippingAddress,
+  paymentMethod: Joi.string()
+    .valid('card', 'mobile_money', 'bank_transfer', 'cash_on_delivery')
+    .required(),
+  notes: Joi.string().max(500).allow(''),
+})
+  .xor('addressId', 'shippingAddress')
+  .messages({
+    'object.xor': 'Provide either a saved address ID or a shipping address, not both.',
+  });
 
 const updateOrderStatus = Joi.object({
   status: Joi.string()
     .valid(
-      'pending', 'confirmed', 'processing', 'shipped',
-      'delivered', 'cancelled', 'refunded',
+      'pending', 'processing', 'shipped',
+      'delivered', 'cancelled', 'failed',
     )
     .required(),
+  cancellationReason: Joi.string().max(500).allow(''),
 });
 
-// ─────────────────────────────────────────────────────────────────
-//  PAYMENT
-// ─────────────────────────────────────────────────────────────────
-
-const createPayment = Joi.object({
-  order: objectId.required(),
-  user: objectId.required(),
-  method: Joi.string()
-    .valid('card', 'paypal', 'bank_transfer', 'cash_on_delivery')
-    .required(),
-  status: Joi.string().valid('pending', 'completed', 'failed', 'refunded'),
-  amount: Joi.number().min(0).required(),
-  transactionId: Joi.string(),
-  paidAt: Joi.date(),
+const cancelOrder = Joi.object({
+  reason: Joi.string().max(500).allow(''),
 });
-
-const updatePayment = Joi.object({
-  status: Joi.string().valid('pending', 'completed', 'failed', 'refunded'),
-  transactionId: Joi.string(),
-  paidAt: Joi.date(),
-}).min(1);
 
 // ─────────────────────────────────────────────────────────────────
 //  EXPORTS
@@ -249,8 +218,7 @@ export {
   updateAddress,
   addToCart,
   updateCartItem,
-  createOrder,
+  checkout,
   updateOrderStatus,
-  createPayment,
-  updatePayment,
+  cancelOrder,
 };
