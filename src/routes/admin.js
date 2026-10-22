@@ -16,6 +16,14 @@ const router = Router();
 // All admin routes require authentication + admin role
 router.use(authenticate, authorize('admin'));
 
+// ── Payment Status Transitions ─────────────────────────────────
+const PAYMENT_TRANSITIONS = {
+  pending: ['completed', 'failed'],
+  failed: ['pending', 'completed'],
+  completed: ['refunded'],
+  refunded: [],
+};
+
 // ─────────────────────────────────────────────────────────────────
 //  DASHBOARD
 // ─────────────────────────────────────────────────────────────────
@@ -43,7 +51,7 @@ router.get('/dashboard', async (req, res, next) => {
         { $group: { _id: '$status', count: { $sum: 1 } } },
       ]),
       Order.aggregate([
-        { $match: { status: { $nin: ['cancelled', 'failed'] } } },
+        { $match: { paymentStatus: 'completed' } },
         {
           $group: {
             _id: null,
@@ -135,7 +143,8 @@ router.get('/users', async (req, res, next) => {
     }
 
     if (typeof search === 'string' && search.trim()) {
-      const searchRegex = new RegExp(search.trim(), 'i');
+      const escaped = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escaped, 'i');
       filter.$or = [
         { firstName: searchRegex },
         { lastName: searchRegex },
@@ -192,13 +201,14 @@ router.get('/users', async (req, res, next) => {
 // Get a single user by ID
 router.get('/users/:id', async (req, res, next) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) {
+    const userId = req.params.id?.toLowerCase();
+    if (!mongoose.isValidObjectId(userId)) {
       const error = new Error('Invalid user ID.');
       error.statusCode = 400;
       return next(error);
     }
 
-    const user = await User.findById(req.params.id).select('-__v');
+    const user = await User.findById(userId).select('-__v');
 
     if (!user) {
       const error = new Error('User not found.');
@@ -206,9 +216,9 @@ router.get('/users/:id', async (req, res, next) => {
       return next(error);
     }
 
-    // Fetch user's order summary
+    // Fetch user's order summary (excluding cancelled and failed orders)
     const orderSummary = await Order.aggregate([
-      { $match: { user: user._id } },
+      { $match: { user: user._id, status: { $nin: ['cancelled', 'failed'] } } },
       {
         $group: {
           _id: null,
@@ -239,20 +249,21 @@ router.get('/users/:id', async (req, res, next) => {
 // Update a user's role or status
 router.patch('/users/:id', validate(adminUpdateUser), async (req, res, next) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) {
+    const userId = req.params.id?.toLowerCase();
+    if (!mongoose.isValidObjectId(userId)) {
       const error = new Error('Invalid user ID.');
       error.statusCode = 400;
       return next(error);
     }
 
     // Prevent admin from modifying their own role/status
-    if (req.params.id === req.user._id.toString()) {
+    if (userId === req.user._id.toString().toLowerCase()) {
       const error = new Error('You cannot modify your own role or status.');
       error.statusCode = 400;
       return next(error);
     }
 
-    const user = await User.findById(req.params.id);
+    const user = await User.findById(userId);
 
     if (!user) {
       const error = new Error('User not found.');
@@ -333,7 +344,7 @@ router.get('/inventory', async (req, res, next) => {
     const [products, total] = await Promise.all([
       Product.find(filter)
         .populate('category', 'name slug')
-        .select('name slug sku stock price isActive')
+        .select('name slug sku stock price isActive category')
         .sort(sortOptions)
         .skip(skip)
         .limit(limitNum),
@@ -496,7 +507,8 @@ router.get('/payments', async (req, res, next) => {
 // Update payment status on an order
 router.patch('/orders/:id/payment', validate(adminUpdatePaymentStatus), async (req, res, next) => {
   try {
-    if (!mongoose.isValidObjectId(req.params.id)) {
+    const orderId = req.params.id?.toLowerCase();
+    if (!mongoose.isValidObjectId(orderId)) {
       const error = new Error('Invalid order ID.');
       error.statusCode = 400;
       return next(error);
@@ -504,27 +516,51 @@ router.patch('/orders/:id/payment', validate(adminUpdatePaymentStatus), async (r
 
     const { paymentStatus } = req.body;
 
+    const existing = await Order.findById(orderId);
+    if (!existing) {
+      const error = new Error('Order not found.');
+      error.statusCode = 404;
+      return next(error);
+    }
+
+    const allowed = PAYMENT_TRANSITIONS[existing.paymentStatus];
+    if (!allowed || !allowed.includes(paymentStatus)) {
+      const error = new Error(
+        `Cannot change payment from "${existing.paymentStatus}" to "${paymentStatus}".`,
+      );
+      error.statusCode = 400;
+      return next(error);
+    }
+
+    if (['cancelled', 'failed'].includes(existing.status) && paymentStatus === 'completed') {
+      const error = new Error('Cannot mark a cancelled or failed order as paid.');
+      error.statusCode = 400;
+      return next(error);
+    }
+
     const updateFields = { paymentStatus };
     if (paymentStatus === 'completed') {
       updateFields.paidAt = new Date();
     }
 
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
+    const updatedOrder = await Order.findOneAndUpdate(
+      { _id: orderId, paymentStatus: existing.paymentStatus },
       updateFields,
       { new: true },
     ).populate('user', 'firstName lastName email');
 
-    if (!order) {
-      const error = new Error('Order not found.');
-      error.statusCode = 404;
+    if (!updatedOrder) {
+      const error = new Error(
+        'Payment status was modified by another request. Please refresh and try again.',
+      );
+      error.statusCode = 409;
       return next(error);
     }
 
     res.status(200).json({
       success: true,
       message: `Payment status updated to "${paymentStatus}".`,
-      data: { order },
+      data: { order: updatedOrder },
     });
   } catch (err) {
     next(err);
