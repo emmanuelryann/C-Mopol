@@ -8,6 +8,29 @@ import { validate, initializePayment } from '../middlewares/validation.js';
 
 const router = Router();
 
+// ── Helpers ─────────────────────────────────────────────────────
+
+/**
+ * Atomically marks the order as paid and transitions status from 'pending' to 'processing'.
+ * Avoids in-memory doc save collisions and protects against mid-way crash desyncs.
+ * Cancelled or failed orders are NOT marked paid (money received for cancelled orders requires refund).
+ */
+const markOrderPaid = async (payment, paidAt, channel) => {
+  await Order.updateOne(
+    {
+      _id: payment.order,
+      paymentStatus: { $ne: 'completed' },
+      status: { $nin: ['cancelled', 'failed'] },
+    },
+    {
+      paymentStatus: 'completed',
+      paidAt,
+      ...(channel && { paymentMethod: channel }),
+    },
+  );
+  await Order.updateOne({ _id: payment.order, status: 'pending' }, { status: 'processing' });
+};
+
 // ─────────────────────────────────────────────────────────────────
 //  WEBHOOK ENDPOINT (Must be public, raw body used for HMAC check)
 // ─────────────────────────────────────────────────────────────────
@@ -67,21 +90,32 @@ router.post('/webhook', async (req, res, next) => {
 
     // ── Handle 'charge.success' ──────────────────────────────
     if (event === 'charge.success') {
-      // Verify amount matches if supplied in webhook data (in smallest currency unit)
-      if (typeof data.amount === 'number') {
-        const expectedSmallestUnit = Math.round(payment.amount * 100);
-        if (data.amount !== expectedSmallestUnit) {
-          console.warn(
-            `[Webhook Warning] Amount mismatch for ref ${reference}: expected ${expectedSmallestUnit}, got ${data.amount}`,
-          );
-        }
+      // Strictly verify amount and currency against recorded payment
+      if (
+        typeof data.amount !== 'number' ||
+        data.amount !== Math.round(payment.amount * 100) ||
+        (data.currency && data.currency.toUpperCase() !== payment.currency.toUpperCase())
+      ) {
+        await Payment.updateOne(
+          { _id: payment._id, status: { $ne: 'completed' } },
+          {
+            status: 'failed',
+            failureReason: 'Amount or currency mismatch',
+            gatewayResponse: data,
+          },
+        );
+        console.error(`Payment mismatch for ${reference}`);
+        return res.status(200).json({
+          success: true,
+          message: 'Mismatch recorded.',
+        });
       }
 
       const paidAtDate = data.paid_at ? new Date(data.paid_at) : new Date();
 
-      // Atomic transition from pending -> completed
+      // Atomic transition from pending or abandoned -> completed (handles late / delayed payments)
       const updatedPayment = await Payment.findOneAndUpdate(
-        { _id: payment._id, status: 'pending' },
+        { _id: payment._id, status: { $in: ['pending', 'abandoned'] } },
         {
           status: 'completed',
           transactionId: String(data.id || data.reference),
@@ -101,21 +135,15 @@ router.post('/webhook', async (req, res, next) => {
       );
 
       if (updatedPayment) {
-        // Update Order atomically
-        const order = await Order.findById(payment.order);
-        if (order && order.paymentStatus !== 'completed') {
-          order.paymentStatus = 'completed';
-          order.paidAt = paidAtDate;
-          if (data.channel) {
-            order.paymentMethod = data.channel;
-          }
-          if (order.status === 'pending') {
-            order.status = 'processing';
-          }
-          await order.save();
-        }
+        await markOrderPaid(payment, paidAtDate, data.channel);
       } else {
-        // Payment was already marked completed (e.g. by synchronous verify call); record the webhook event
+        // Payment was already marked completed (e.g. by synchronous verify call or previous webhook)
+        // Ensure order is paid even if server previously crashed mid-way
+        await markOrderPaid(
+          payment,
+          payment.paidAt || paidAtDate,
+          data.channel || payment.channel,
+        );
         await Payment.updateOne(
           { _id: payment._id },
           {
@@ -139,7 +167,7 @@ router.post('/webhook', async (req, res, next) => {
     // ── Handle 'charge.failed' ──────────────────────────────
     if (event === 'charge.failed') {
       await Payment.findOneAndUpdate(
-        { _id: payment._id, status: 'pending' },
+        { _id: payment._id, status: { $in: ['pending', 'abandoned'] } },
         {
           status: 'failed',
           failureReason: data.gateway_response || 'Payment failed via webhook.',
@@ -205,6 +233,13 @@ router.post('/initialize', validate(initializePayment), async (req, res, next) =
       return next(error);
     }
 
+    // Cash on delivery orders cannot be paid online
+    if (order.paymentMethod === 'cash_on_delivery') {
+      const error = new Error('Cash on delivery orders cannot be paid online.');
+      error.statusCode = 400;
+      return next(error);
+    }
+
     // Check order status
     if (['cancelled', 'failed'].includes(order.status)) {
       const error = new Error(`Cannot pay for a ${order.status} order.`);
@@ -234,6 +269,21 @@ router.post('/initialize', validate(initializePayment), async (req, res, next) =
       const error = new Error('This order has already been paid for.');
       error.statusCode = 400;
       return next(error);
+    }
+
+    // Validate client callbackUrl if provided
+    let resolvedCallbackUrl;
+    if (callbackUrl && typeof callbackUrl === 'string') {
+      const allowedBase =
+        process.env.FRONTEND_URL ||
+        process.env.CORS_ORIGIN ||
+        'http://localhost:3000';
+      if (!callbackUrl.startsWith(allowedBase)) {
+        const error = new Error(`Callback URL must start with ${allowedBase}`);
+        error.statusCode = 400;
+        return next(error);
+      }
+      resolvedCallbackUrl = callbackUrl;
     }
 
     // Check for an existing pending payment record
@@ -282,7 +332,7 @@ router.post('/initialize', validate(initializePayment), async (req, res, next) =
       email: customerEmail,
       amount: order.totalAmount, // Server-calculated amount — NEVER trust client input
       currency: 'GHS',
-      callbackUrl,
+      callbackUrl: resolvedCallbackUrl,
       metadata: {
         userId: req.user._id.toString(),
       },
@@ -319,6 +369,13 @@ router.post('/initialize', validate(initializePayment), async (req, res, next) =
       },
     });
   } catch (err) {
+    if (err.code === 11000) {
+      const conflictErr = new Error(
+        'A payment session is already active or being initialized for this order. Please wait or refresh.',
+      );
+      conflictErr.statusCode = 409;
+      return next(conflictErr);
+    }
     next(err);
   }
 });
@@ -390,26 +447,27 @@ router.get('/verify/:reference', async (req, res, next) => {
 
     // ── Provider verified success ───────────────────────────
     if (verification.success && verification.status === 'success') {
-      // Validate that the paid amount returned by provider matches the expected amount
+      // Validate that the paid amount and currency match the expected payment
       if (
-        typeof verification.amount === 'number' &&
-        Math.abs(verification.amount - payment.amount) > 0.01
+        verification.amount === undefined ||
+        Math.abs(verification.amount - payment.amount) > 0.01 ||
+        (verification.currency && verification.currency.toUpperCase() !== payment.currency.toUpperCase())
       ) {
         payment.status = 'failed';
-        payment.failureReason = `Amount mismatch: expected ${payment.amount}, received ${verification.amount}`;
+        payment.failureReason = `Payment mismatch: expected ${payment.amount} ${payment.currency}, received ${verification.amount} ${verification.currency || ''}`;
         payment.gatewayResponse = verification.gatewayResponse;
         await payment.save();
 
         const error = new Error(
-          'Payment amount mismatch detected. Please contact support.',
+          'Payment amount or currency mismatch detected. Please contact support.',
         );
         error.statusCode = 400;
         return next(error);
       }
 
-      // Atomically update Payment: only if still pending
+      // Atomically update Payment: only if still pending or abandoned (handles late payments)
       const updatedPayment = await Payment.findOneAndUpdate(
-        { _id: payment._id, status: 'pending' },
+        { _id: payment._id, status: { $in: ['pending', 'abandoned'] } },
         {
           status: 'completed',
           transactionId: verification.transactionId,
@@ -421,19 +479,11 @@ router.get('/verify/:reference', async (req, res, next) => {
         { new: true },
       );
 
-      if (updatedPayment) {
-        // Transition Order paymentStatus to completed
-        order.paymentStatus = 'completed';
-        order.paidAt = updatedPayment.paidAt;
-        if (verification.channel) {
-          order.paymentMethod = verification.channel;
-        }
-        // Move order from 'pending' to 'processing' upon payment confirmation
-        if (order.status === 'pending') {
-          order.status = 'processing';
-        }
-        await order.save();
-      }
+      const paidAt = updatedPayment ? updatedPayment.paidAt : (payment.paidAt || new Date());
+      const channel = verification.channel || payment.channel;
+
+      // Atomically mark the order paid
+      await markOrderPaid(payment, paidAt, channel);
 
       const freshPayment = updatedPayment || (await Payment.findById(payment._id));
       const freshOrder = await Order.findById(payment.order);

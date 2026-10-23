@@ -538,6 +538,17 @@ router.patch('/orders/:id/payment', validate(adminUpdatePaymentStatus), async (r
       return next(error);
     }
 
+    if (
+      paymentStatus === 'completed' &&
+      !['cash_on_delivery', 'bank_transfer'].includes(existing.paymentMethod)
+    ) {
+      const error = new Error(
+        'Only cash on delivery or bank transfer orders can be manually marked as completed by admin. Online card/mobile payments must be verified through the payment gateway.',
+      );
+      error.statusCode = 400;
+      return next(error);
+    }
+
     const updateFields = { paymentStatus };
     if (paymentStatus === 'completed') {
       updateFields.paidAt = new Date();

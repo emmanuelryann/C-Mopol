@@ -15,6 +15,7 @@ import addressRoutes from './routes/address.js';
 import orderRoutes from './routes/order.js';
 import adminRoutes from './routes/admin.js';
 import paymentRoutes from './routes/payment.js';
+import paymentService from './services/paymentService.js';
 
 // Load environment variables
 dotenv.config();
@@ -76,6 +77,12 @@ app.use(errorHandler);
 
 // Start server
 const startServer = async () => {
+  // Validate payment gateway configuration early (fails fast if mock in production)
+  const isMock = paymentService.isMockMode();
+  if (isMock) {
+    console.warn('⚠️  Payment service running in MOCK mode.');
+  }
+
   await connectDB();
 
   app.listen(PORT, () => {

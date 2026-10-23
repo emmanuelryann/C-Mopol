@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'abandoned'];
+const PAYMENT_STATUSES = ['pending', 'completed', 'failed', 'abandoned', 'refunded'];
 
 const processedWebhookSchema = new mongoose.Schema(
   {
@@ -79,6 +79,7 @@ const paymentSchema = new mongoose.Schema(
     },
     gatewayResponse: {
       type: mongoose.Schema.Types.Mixed,
+      select: false,
     },
     paidAt: {
       type: Date,
@@ -98,6 +99,10 @@ const paymentSchema = new mongoose.Schema(
 paymentSchema.index({ order: 1, createdAt: -1 });
 paymentSchema.index({ user: 1, createdAt: -1 });
 paymentSchema.index({ status: 1, createdAt: -1 });
+paymentSchema.index(
+  { order: 1 },
+  { unique: true, partialFilterExpression: { status: 'pending' } },
+);
 
 const Payment = mongoose.model('Payment', paymentSchema);
 

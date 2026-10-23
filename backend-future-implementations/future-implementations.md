@@ -152,7 +152,8 @@ When ready to switch from dummy/mock mode to live Paystack processing:
      - `52.31.139.75`
      - `52.214.14.220`
      - `52.49.173.169`
-   - **Idempotency Guarantee:** Duplicate webhook deliveries are guarded by atomic conditional queries (`Payment.findOneAndUpdate({ _id, status: 'pending' })`) and the `processedWebhooks` event log.
+   - **Idempotency Guarantee:** Duplicate webhook deliveries are guarded by atomic conditional queries (`Payment.findOneAndUpdate({ _id, status: { $in: ['pending', 'abandoned'] } })`) and the `processedWebhooks` event log.
+   - **Reconciliation for Cancelled Orders & Delayed Payments:** If a customer pays late for an order that was already cancelled, or pays an older session after generating a new one, the atomic handler records the payment as completed but purposefully does NOT mark the cancelled order as paid or processing. These transactions should be surfaced in an admin reconciliation view for manual or automated refunding via the payment gateway.
 
 5. **Future Payment Enhancements:**
    - **Multi-Gateway Support:** Implement Stripe and Flutterwave adapters conforming to the `PaymentService` interface.

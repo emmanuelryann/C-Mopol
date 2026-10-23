@@ -7,23 +7,36 @@ import crypto from 'crypto';
  * Paystack (or other gateway) provider API calls.
  */
 class PaymentService {
-  constructor() {
-    this.secretKey = process.env.PAYSTACK_SECRET_KEY || 'dummy_paystack_secret_key';
-    this.publicKey = process.env.PAYSTACK_PUBLIC_KEY || 'dummy_paystack_public_key';
-    this.baseUrl = process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co';
-    this.defaultCurrency = process.env.PAYMENT_CURRENCY || 'GHS';
+  get secretKey() {
+    return process.env.PAYSTACK_SECRET_KEY || 'dummy_paystack_secret_key';
+  }
+
+  get publicKey() {
+    return process.env.PAYSTACK_PUBLIC_KEY || 'dummy_paystack_public_key';
+  }
+
+  get baseUrl() {
+    return process.env.PAYSTACK_BASE_URL || 'https://api.paystack.co';
+  }
+
+  get defaultCurrency() {
+    return process.env.PAYMENT_CURRENCY || 'GHS';
   }
 
   /**
    * Determine whether live API calls should be made or mock responses returned.
    * If PAYSTACK_SECRET_KEY is empty, starts with 'dummy_', or MOCK_PAYMENT is 'true',
    * the service runs in mock mode.
+   * Throws in production to prevent simulated payments from leaking.
    */
   isMockMode() {
-    if (process.env.MOCK_PAYMENT === 'true') return true;
-    if (!process.env.PAYSTACK_SECRET_KEY) return true;
-    if (process.env.PAYSTACK_SECRET_KEY.startsWith('dummy_')) return true;
-    return false;
+    const key = process.env.PAYSTACK_SECRET_KEY;
+    const wantsMock =
+      process.env.MOCK_PAYMENT === 'true' || !key || key.startsWith('dummy_');
+    if (wantsMock && process.env.NODE_ENV === 'production') {
+      throw new Error('Mock payments are not allowed in production.');
+    }
+    return wantsMock;
   }
 
   /**
@@ -94,7 +107,7 @@ class PaymentService {
       amount: amountInSmallestUnit,
       currency: curr,
       reference: ref,
-      callback_url: callbackUrl,
+      ...(callbackUrl && { callback_url: callbackUrl }),
       metadata: {
         orderId: String(orderId),
         orderNumber,
@@ -274,9 +287,9 @@ class PaymentService {
       return false;
     }
 
-    // Allow mock signature in non-production environments for automated testing
+    // Allow mock signature strictly in development mode for automated testing
     if (
-      process.env.NODE_ENV !== 'production' &&
+      process.env.NODE_ENV === 'development' &&
       signature === 'mock_valid_signature'
     ) {
       return true;
