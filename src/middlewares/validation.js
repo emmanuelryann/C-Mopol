@@ -199,6 +199,16 @@ const cancelOrder = Joi.object({
 });
 
 // ─────────────────────────────────────────────────────────────────
+//  PAYMENT
+// ─────────────────────────────────────────────────────────────────
+
+const initializePayment = Joi.object({
+  orderId: objectId.required(),
+  callbackUrl: Joi.string().uri().allow(''),
+  forceNew: Joi.boolean(),
+});
+
+// ─────────────────────────────────────────────────────────────────
 //  ADMIN
 // ─────────────────────────────────────────────────────────────────
 
@@ -236,6 +246,7 @@ export {
   checkout,
   updateOrderStatus,
   cancelOrder,
+  initializePayment,
   adminUpdateUser,
   adminUpdatePaymentStatus,
 };

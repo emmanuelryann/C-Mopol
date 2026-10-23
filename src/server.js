@@ -14,6 +14,7 @@ import cartRoutes from './routes/cart.js';
 import addressRoutes from './routes/address.js';
 import orderRoutes from './routes/order.js';
 import adminRoutes from './routes/admin.js';
+import paymentRoutes from './routes/payment.js';
 
 // Load environment variables
 dotenv.config();
@@ -35,7 +36,14 @@ app.use(
 );
 
 // Body parsing
-app.use(express.json({ limit: '16kb' }));
+app.use(
+  express.json({
+    limit: '16kb',
+    verify: (req, res, buf) => {
+      req.rawBody = buf;
+    },
+  }),
+);
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 app.use(cookieParser());
 
@@ -60,6 +68,7 @@ app.use('/api/v1/cart', cartRoutes);
 app.use('/api/v1/addresses', addressRoutes);
 app.use('/api/v1/orders', orderRoutes);
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/payments', paymentRoutes);
 
 // Error handling middleware
 app.use(notFound);

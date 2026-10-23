@@ -111,13 +111,53 @@ This document outlines backend features, security enhancements, integrations, an
   - **Shipping Tracking:** Add `trackingNumber` and `carrier` fields; allow admin to attach tracking info when marking as shipped.
   - **Returns & Refunds:** Customer-initiated return requests with approval workflow and stock restoration.
 
-### 2.5 Payment Gateway Integration
-- **Status:** Payment status tracked on Order model; gateway integration pending
-- **Tasks:**
-  - Stripe / Paystack / Flutterwave integration.
-  - Secure webhook endpoint (`/api/v1/payments/webhook`) with signature verification to handle asynchronous payment confirmations, refunds, and failures.
-  - Idempotency handling on payment charges.
-  - Migrate `Payment` model to active use or remove if payments remain embedded on Order.
+### 2.5 Payment Gateway Integration & Live Transition Guide
+- **Status:** **Architecture & Mock Phase Implemented** — Pluggable provider service layer (`src/services/paymentService.js`), hardened `Payment` model (`src/models/payment.js`), server-side payment initialization (`POST /initialize`), server-to-server verification (`GET /verify/:reference`), HMAC-SHA512 webhook signature verification with raw request body capture (`POST /webhook`), idempotency protections, and customer/admin payment query endpoints.
+- **Current Mode:** Runs in mock mode out of the box when `PAYSTACK_SECRET_KEY` is dummy or missing, allowing full local end-to-end development without live credentials.
+
+#### Transition Checklist: Activating Live Paystack
+
+When ready to switch from dummy/mock mode to live Paystack processing:
+
+1. **Environment Variables Configuration:**
+   Add live (or test) credentials to your production `.env` file:
+   ```env
+   PAYSTACK_SECRET_KEY=sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   PAYSTACK_PUBLIC_KEY=pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   PAYSTACK_BASE_URL=https://api.paystack.co
+   PAYMENT_CURRENCY=GHS
+   MOCK_PAYMENT=false
+   FRONTEND_URL=https://yourstore.com
+   ```
+   *(For development/staging testing before launch, use test keys `sk_test_...` and `pk_test_...`)*
+
+2. **Paystack Dashboard Webhook & Callback Setup:**
+   - Log in to your [Paystack Dashboard](https://dashboard.paystack.com/) → **Settings** → **API Keys & Webhooks**.
+   - Set **Live Webhook URL** to: `https://api.yourstore.com/api/v1/payments/webhook`.
+   - Set **Live Callback URL** to: `https://yourstore.com/checkout/payment/callback`.
+   - Ensure the secret key in the dashboard matches `PAYSTACK_SECRET_KEY` in `.env` so HMAC-SHA512 validation succeeds.
+
+3. **Frontend Integration Flow:**
+   - **Step 1:** Customer clicks "Pay Now" on the checkout page. The frontend sends `POST /api/v1/payments/initialize` with `{ orderId }`.
+   - **Step 2:** The backend returns `{ reference, authorizationUrl, accessCode }`.
+   - **Step 3:** The frontend redirects the customer to `authorizationUrl` (or opens the Paystack Popup Modal using the `accessCode` and `PAYSTACK_PUBLIC_KEY` with Paystack Inline JS).
+   - **Step 4:** Once payment is made, Paystack redirects back to `callback_url?reference=...`.
+   - **Step 5:** The frontend landing page extracts `reference` from the URL and calls `GET /api/v1/payments/verify/:reference` to confirm payment with the server.
+   - **Step 6:** The backend verifies with Paystack's server API, updates `Payment` and `Order` atomically, and returns the confirmed order.
+   - **Step 7:** Paystack's asynchronous webhook (`POST /api/v1/payments/webhook`) also delivers `charge.success` as a redundant fallback in case the customer closes their browser before returning.
+
+4. **Security & Production Hardening:**
+   - **Never trust client-submitted amounts:** Payment amount is computed strictly on the backend from `order.totalAmount` and converted to the smallest currency unit (pesewas/kobo: amount * 100).
+   - **IP Whitelisting:** Paystack delivers webhooks from the following IP addresses. If behind a firewall or Cloudflare, whitelist:
+     - `52.31.139.75`
+     - `52.214.14.220`
+     - `52.49.173.169`
+   - **Idempotency Guarantee:** Duplicate webhook deliveries are guarded by atomic conditional queries (`Payment.findOneAndUpdate({ _id, status: 'pending' })`) and the `processedWebhooks` event log.
+
+5. **Future Payment Enhancements:**
+   - **Multi-Gateway Support:** Implement Stripe and Flutterwave adapters conforming to the `PaymentService` interface.
+   - **Automated Refunds:** Add admin refund route (`POST /api/v1/payments/:id/refund`) calling Paystack `/refund` API and transitioning order to `refunded`.
+   - **Saved Cards / Tokenized Subscriptions:** Support Paystack customer authorization codes for one-click re-orders.
 
 ### 2.6 Address Book
 - **Status:** Implemented — full CRUD with default address management
