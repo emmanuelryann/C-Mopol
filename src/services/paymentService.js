@@ -27,14 +27,16 @@ class PaymentService {
    * Determine whether live API calls should be made or mock responses returned.
    * If PAYSTACK_SECRET_KEY is empty, starts with 'dummy_', or MOCK_PAYMENT is 'true',
    * the service runs in mock mode.
-   * Throws in production to prevent simulated payments from leaking.
+   * Fails closed: Mock payments are strictly forbidden unless NODE_ENV is development or test.
    */
   isMockMode() {
     const key = process.env.PAYSTACK_SECRET_KEY;
     const wantsMock =
       process.env.MOCK_PAYMENT === 'true' || !key || key.startsWith('dummy_');
-    if (wantsMock && process.env.NODE_ENV === 'production') {
-      throw new Error('Mock payments are not allowed in production.');
+    if (wantsMock && !['development', 'test'].includes(process.env.NODE_ENV)) {
+      throw new Error(
+        'Mock payments are only allowed in development or test environments.',
+      );
     }
     return wantsMock;
   }

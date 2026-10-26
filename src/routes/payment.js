@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import mongoose from 'mongoose';
+import rateLimit from 'express-rate-limit';
 import Payment, { PAYMENT_STATUSES } from '../models/payment.js';
 import Order from '../models/order.js';
 import paymentService from '../services/paymentService.js';
@@ -7,6 +8,18 @@ import { authenticate, authorize } from '../middlewares/auth.js';
 import { validate, initializePayment } from '../middlewares/validation.js';
 
 const router = Router();
+
+// Rate limiter for verification endpoint (protects external gateway calls)
+const verifyRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30, // max 30 verification calls per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many verification attempts. Please wait a moment and try again.',
+  },
+});
 
 // ── Helpers ─────────────────────────────────────────────────────
 
@@ -136,7 +149,7 @@ router.post('/webhook', async (req, res, next) => {
 
       if (updatedPayment) {
         await markOrderPaid(payment, paidAtDate, data.channel);
-      } else {
+      } else if (payment.status === 'completed') {
         // Payment was already marked completed (e.g. by synchronous verify call or previous webhook)
         // Ensure order is paid even if server previously crashed mid-way
         await markOrderPaid(
@@ -271,19 +284,27 @@ router.post('/initialize', validate(initializePayment), async (req, res, next) =
       return next(error);
     }
 
-    // Validate client callbackUrl if provided
+    // Validate client callbackUrl if provided (ensures origin matches allowed frontend)
     let resolvedCallbackUrl;
-    if (callbackUrl && typeof callbackUrl === 'string') {
-      const allowedBase =
-        process.env.FRONTEND_URL ||
-        process.env.CORS_ORIGIN ||
-        'http://localhost:3000';
-      if (!callbackUrl.startsWith(allowedBase)) {
-        const error = new Error(`Callback URL must start with ${allowedBase}`);
+    if (callbackUrl) {
+      try {
+        const allowedOrigin = new URL(
+          process.env.FRONTEND_URL ||
+          process.env.CORS_ORIGIN ||
+          'http://localhost:3000',
+        ).origin;
+
+        if (new URL(callbackUrl).origin !== allowedOrigin) {
+          const error = new Error('Invalid callback URL.');
+          error.statusCode = 400;
+          return next(error);
+        }
+        resolvedCallbackUrl = callbackUrl;
+      } catch {
+        const error = new Error('Invalid callback URL.');
         error.statusCode = 400;
         return next(error);
       }
-      resolvedCallbackUrl = callbackUrl;
     }
 
     // Check for an existing pending payment record
@@ -386,7 +407,7 @@ router.post('/initialize', validate(initializePayment), async (req, res, next) =
  * Updates payment and order status only after verified confirmation.
  * Never marks an order as paid based solely on frontend assertions.
  */
-router.get('/verify/:reference', async (req, res, next) => {
+router.get('/verify/:reference', verifyRateLimiter, async (req, res, next) => {
   try {
     const reference = String(req.params.reference || '').trim();
     if (!reference) {
@@ -500,35 +521,49 @@ router.get('/verify/:reference', async (req, res, next) => {
 
     // ── Provider reported failure or abandonment ────────────
     if (verification.status === 'abandoned') {
-      payment.status = 'abandoned';
-      payment.failureReason = verification.failureReason || 'Payment abandoned by customer.';
-      payment.gatewayResponse = verification.gatewayResponse;
-      await payment.save();
+      const abandonedPayment = await Payment.findOneAndUpdate(
+        { _id: payment._id, status: { $in: ['pending', 'abandoned'] } },
+        {
+          status: 'abandoned',
+          failureReason: verification.failureReason || 'Payment abandoned by customer.',
+          gatewayResponse: verification.gatewayResponse,
+        },
+        { new: true },
+      );
 
       return res.status(200).json({
         success: false,
         message: 'Payment was abandoned by the customer.',
         data: {
-          payment,
+          payment: abandonedPayment || (await Payment.findById(payment._id)),
           status: 'abandoned',
         },
       });
     }
 
-    // Payment failed
-    payment.status = 'failed';
-    payment.failureReason = verification.failureReason || 'Payment verification failed.';
-    payment.gatewayResponse = verification.gatewayResponse;
-    await payment.save();
+    // Payment failed — conditional atomic update avoids overwriting concurrent webhook completion
+    const failedPayment = await Payment.findOneAndUpdate(
+      { _id: payment._id, status: { $in: ['pending', 'abandoned'] } },
+      {
+        status: 'failed',
+        failureReason: verification.failureReason || 'Payment verification failed.',
+        gatewayResponse: verification.gatewayResponse,
+      },
+      { new: true },
+    );
 
-    order.paymentStatus = 'failed';
-    await order.save();
+    if (failedPayment) {
+      await Order.findOneAndUpdate(
+        { _id: payment.order, paymentStatus: 'pending' },
+        { paymentStatus: 'failed' },
+      );
+    }
 
     return res.status(200).json({
       success: false,
-      message: payment.failureReason,
+      message: verification.failureReason || 'Payment verification failed.',
       data: {
-        payment,
+        payment: failedPayment || (await Payment.findById(payment._id)),
         status: 'failed',
       },
     });
@@ -729,6 +764,62 @@ router.get('/admin', authorize('admin'), async (req, res, next) => {
       data: {
         payments,
         metrics,
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          totalPages,
+          hasNextPage: pageNum < totalPages,
+          hasPrevPage: pageNum > 1,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/v1/payments/admin/reconciliation
+ * Admin: List completed payments linked to cancelled or failed orders (actionable refund queue).
+ */
+router.get('/admin/reconciliation', authorize('admin'), async (req, res, next) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const skip = (pageNum - 1) * limitNum;
+
+    // Find all cancelled or failed orders
+    const invalidOrders = await Order.find({
+      status: { $in: ['cancelled', 'failed'] },
+    }).select('_id');
+    const invalidOrderIds = invalidOrders.map((o) => o._id);
+
+    // Find completed payments matching those orders
+    const filter = {
+      order: { $in: invalidOrderIds },
+      status: 'completed',
+    };
+
+    const [payments, total] = await Promise.all([
+      Payment.find(filter)
+        .populate('user', 'firstName lastName email')
+        .populate('order', 'orderNumber totalAmount status paymentStatus cancelledAt cancellationReason')
+        .sort({ paidAt: -1 })
+        .skip(skip)
+        .limit(limitNum),
+      Payment.countDocuments(filter),
+    ]);
+
+    const totalPages = Math.ceil(total / limitNum);
+
+    res.status(200).json({
+      success: true,
+      message: 'Reconciliation payments retrieved.',
+      data: {
+        payments,
         pagination: {
           total,
           page: pageNum,

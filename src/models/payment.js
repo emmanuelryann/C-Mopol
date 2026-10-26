@@ -26,13 +26,11 @@ const paymentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Order',
       required: [true, 'Order reference is required.'],
-      index: true,
     },
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: [true, 'User reference is required.'],
-      index: true,
     },
     reference: {
       type: String,
@@ -101,7 +99,11 @@ paymentSchema.index({ user: 1, createdAt: -1 });
 paymentSchema.index({ status: 1, createdAt: -1 });
 paymentSchema.index(
   { order: 1 },
-  { unique: true, partialFilterExpression: { status: 'pending' } },
+  {
+    name: 'order_pending_unique',
+    unique: true,
+    partialFilterExpression: { status: 'pending' },
+  },
 );
 
 const Payment = mongoose.model('Payment', paymentSchema);
