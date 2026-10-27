@@ -126,9 +126,9 @@ router.post('/webhook', async (req, res, next) => {
 
       const paidAtDate = data.paid_at ? new Date(data.paid_at) : new Date();
 
-      // Atomic transition from pending or abandoned -> completed (handles late / delayed payments)
+      // Atomic transition from pending, abandoned, or failed -> completed (handles late payments and retries)
       const updatedPayment = await Payment.findOneAndUpdate(
-        { _id: payment._id, status: { $in: ['pending', 'abandoned'] } },
+        { _id: payment._id, status: { $in: ['pending', 'abandoned', 'failed'] } },
         {
           status: 'completed',
           transactionId: String(data.id || data.reference),
@@ -486,9 +486,9 @@ router.get('/verify/:reference', verifyRateLimiter, async (req, res, next) => {
         return next(error);
       }
 
-      // Atomically update Payment: only if still pending or abandoned (handles late payments)
+      // Atomically update Payment: only if still pending, abandoned, or failed (handles late payments and retries)
       const updatedPayment = await Payment.findOneAndUpdate(
-        { _id: payment._id, status: { $in: ['pending', 'abandoned'] } },
+        { _id: payment._id, status: { $in: ['pending', 'abandoned', 'failed'] } },
         {
           status: 'completed',
           transactionId: verification.transactionId,
@@ -781,7 +781,9 @@ router.get('/admin', authorize('admin'), async (req, res, next) => {
 
 /**
  * GET /api/v1/payments/admin/reconciliation
- * Admin: List completed payments linked to cancelled or failed orders (actionable refund queue).
+ * Admin: List completed payments needing reconciliation:
+ * 1. Payments linked to cancelled or failed orders.
+ * 2. Orders with duplicate completed payments (customer paid twice across sessions).
  */
 router.get('/admin/reconciliation', authorize('admin'), async (req, res, next) => {
   try {
@@ -791,28 +793,105 @@ router.get('/admin/reconciliation', authorize('admin'), async (req, res, next) =
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
     const skip = (pageNum - 1) * limitNum;
 
-    // Find all cancelled or failed orders
-    const invalidOrders = await Order.find({
-      status: { $in: ['cancelled', 'failed'] },
-    }).select('_id');
-    const invalidOrderIds = invalidOrders.map((o) => o._id);
-
-    // Find completed payments matching those orders
-    const filter = {
-      order: { $in: invalidOrderIds },
-      status: 'completed',
-    };
-
-    const [payments, total] = await Promise.all([
-      Payment.find(filter)
-        .populate('user', 'firstName lastName email')
-        .populate('order', 'orderNumber totalAmount status paymentStatus cancelledAt cancellationReason')
-        .sort({ paidAt: -1 })
-        .skip(skip)
-        .limit(limitNum),
-      Payment.countDocuments(filter),
+    const [results] = await Payment.aggregate([
+      { $match: { status: 'completed' } },
+      {
+        $lookup: {
+          from: 'orders',
+          localField: 'order',
+          foreignField: '_id',
+          as: 'order',
+        },
+      },
+      { $unwind: '$order' },
+      {
+        $lookup: {
+          from: 'payments',
+          let: { orderId: '$order._id', currentPaymentId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$order', '$$orderId'] },
+                    { $eq: ['$status', 'completed'] },
+                    { $ne: ['$_id', '$$currentPaymentId'] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'duplicatePayments',
+        },
+      },
+      {
+        $match: {
+          $or: [
+            { 'order.status': { $in: ['cancelled', 'failed'] } },
+            { $expr: { $gt: [{ $size: '$duplicatePayments' }, 0] } },
+          ],
+        },
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'user',
+          foreignField: '_id',
+          as: 'user',
+        },
+      },
+      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+      {
+        $addFields: {
+          reconciliationReason: {
+            $cond: [
+              { $in: ['$order.status', ['cancelled', 'failed']] },
+              'order_cancelled_or_failed',
+              'duplicate_completed_payment',
+            ],
+          },
+          duplicatePaymentsCount: { $size: '$duplicatePayments' },
+        },
+      },
+      {
+        $project: {
+          reference: 1,
+          amount: 1,
+          currency: 1,
+          status: 1,
+          channel: 1,
+          transactionId: 1,
+          paidAt: 1,
+          createdAt: 1,
+          reconciliationReason: 1,
+          duplicatePaymentsCount: 1,
+          'user._id': 1,
+          'user.firstName': 1,
+          'user.lastName': 1,
+          'user.email': 1,
+          'order._id': 1,
+          'order.orderNumber': 1,
+          'order.totalAmount': 1,
+          'order.status': 1,
+          'order.paymentStatus': 1,
+          'order.cancelledAt': 1,
+          'order.cancellationReason': 1,
+        },
+      },
+      {
+        $facet: {
+          payments: [
+            { $sort: { paidAt: -1 } },
+            { $skip: skip },
+            { $limit: limitNum },
+          ],
+          totalCount: [{ $count: 'count' }],
+        },
+      },
     ]);
 
+    const payments = results?.payments || [];
+    const total = results?.totalCount?.[0]?.count || 0;
     const totalPages = Math.ceil(total / limitNum);
 
     res.status(200).json({

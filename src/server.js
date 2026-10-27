@@ -25,6 +25,9 @@ const PORT = process.env.PORT || 5000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
 
+// Trust reverse proxy (enables proper client IP resolution for rate limiters behind Nginx/Render/Heroku)
+app.set('trust proxy', 1);
+
 // Security headers
 app.use(helmet());
 
