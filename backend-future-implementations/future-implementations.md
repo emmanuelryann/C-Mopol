@@ -152,15 +152,113 @@ When ready to switch from dummy/mock mode to live Paystack processing:
      - `52.31.139.75`
      - `52.214.14.220`
      - `52.49.173.169`
-   - **Idempotency Guarantee:** Duplicate webhook deliveries are guarded by atomic conditional queries (`Payment.findOneAndUpdate({ _id, status: { $in: ['pending', 'abandoned'] } })`) and the `processedWebhooks` event log.
-   - **Reconciliation for Cancelled Orders & Delayed Payments:** If a customer pays late for an order that was already cancelled, or pays an older session after generating a new one, the atomic handler records the payment as completed but purposefully does NOT mark the cancelled order as paid or processing. These transactions should be surfaced in an admin reconciliation view for manual or automated refunding via the payment gateway.
+   - **Idempotency Guarantee:** Duplicate webhook deliveries are guarded by atomic conditional queries (`Payment.findOneAndUpdate({ _id, status: { $in: ['pending', 'abandoned', 'failed'] } })`) and the `processedWebhooks` event log.
+   - **Reconciliation for Cancelled Orders & Delayed Payments:** If a customer pays late for an order that was already cancelled, or pays an older session after generating a new one, the atomic handler records the payment as completed but purposefully does NOT mark the cancelled order as paid or processing. These transactions are surfaced in the admin reconciliation endpoint (`GET /api/v1/payments/admin/reconciliation`) for manual or automated refunding via the payment gateway.
 
 5. **Future Payment Enhancements:**
    - **Multi-Gateway Support:** Implement Stripe and Flutterwave adapters conforming to the `PaymentService` interface.
-   - **Automated Refunds:** Add admin refund route (`POST /api/v1/payments/:id/refund`) calling Paystack `/refund` API and transitioning order to `refunded`.
    - **Saved Cards / Tokenized Subscriptions:** Support Paystack customer authorization codes for one-click re-orders.
 
-### 2.6 Address Book
+### 2.6 Automated Refund Engine & Lifecycle Logic
+- **Status:** Architecture Planned & Documented; Reconciliation Queue Implemented (`GET /api/v1/payments/admin/reconciliation`)
+- **Description:** A robust, end-to-end refund workflow supporting administrative refunds for cancelled orders, duplicate payments, and returned goods via payment gateway APIs (e.g. Paystack, Stripe).
+
+#### 1. Trigger Scenarios
+1. **Reconciliation Refunds (Unfulfillable Payments):**
+   - Customer paid for an order that was cancelled prior to payment completion (e.g., checkout session timed out or admin cancelled).
+   - Customer paid multiple sessions for the same order (e.g., after `forceNew: true`), creating duplicate completed payments.
+   - *These transactions appear automatically in `GET /api/v1/payments/admin/reconciliation`.*
+2. **Order Return / Damaged Goods:**
+   - Customer requests a return or refund for an active/delivered order approved by store administrators.
+3. **Partial Order Refunds:**
+   - Refunding specific out-of-stock items while fulfilling the remainder of the order.
+
+#### 2. Data Model Schema Updates
+Update `Payment` and `Order` schemas to record granular refund history:
+
+```javascript
+// src/models/payment.js enhancement
+const refundEntrySchema = new mongoose.Schema(
+  {
+    refundId: { type: String, trim: true },          // Gateway refund ID (e.g. Paystack 'rf_...')
+    amount: { type: Number, required: true, min: 0 }, // In standard currency unit
+    currency: { type: String, default: 'GHS' },
+    reason: { type: String, required: true },
+    initiatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    status: {
+      type: String,
+      enum: ['pending', 'processed', 'failed'],
+      default: 'pending',
+    },
+    gatewayResponse: { type: mongoose.Schema.Types.Mixed, select: false },
+    processedAt: { type: Date },
+  },
+  { timestamps: true }
+);
+
+// Add to paymentSchema:
+amountRefunded: { type: Number, default: 0, min: 0 },
+refundStatus: {
+  type: String,
+  enum: ['none', 'partial', 'full'],
+  default: 'none',
+},
+refunds: [refundEntrySchema],
+```
+
+#### 3. Administrative Refund Endpoint Specification
+- **Route:** `POST /api/v1/payments/:id/refund`
+- **Access:** Authenticated + Authorized Admin (`authenticate`, `authorize('admin')`)
+- **Validation Schema (Joi):**
+  ```javascript
+  const processRefundSchema = Joi.object({
+    amount: Joi.number().min(0.01).required(),
+    reason: Joi.string().trim().min(3).max(500).required(),
+    merchantNote: Joi.string().trim().max(250).allow(''),
+  });
+  ```
+- **Execution & Invariant Rules:**
+  1. Payment must be in `completed` status.
+  2. Prevent over-refunding: Ensure `amount <= (payment.amount - payment.amountRefunded)`.
+  3. Prevent duplicate concurrent requests using atomic operations or distributed locks.
+  4. Call provider service: `paymentService.createRefund({ reference, amount, currency, reason, merchantNote })`.
+
+#### 4. Payment Provider (Paystack) Integration
+When calling Paystack's Refund API:
+```javascript
+// POST https://api.paystack.co/refund
+// Headers: Authorization: Bearer {PAYSTACK_SECRET_KEY}
+const payload = {
+  transaction: payment.transactionId || payment.reference,
+  amount: Math.round(refundAmount * 100), // convert to pesewas/kobo
+  currency: payment.currency,
+  merchant_note: merchantNote || reason,
+  customer_note: `Refund for order ${order.orderNumber}: ${reason}`,
+};
+```
+*Note: Paystack refunds are processed asynchronously by issuing banks (typically taking 1–5 business days).*
+
+#### 5. Webhook Events Handling
+Add handlers in `POST /api/v1/payments/webhook`:
+- **`refund.processed`:**
+  - Locate `Payment` by `data.transaction_reference` or `data.refund_reference`.
+  - Atomically update subdocument in `refunds` array to `status: 'processed'`.
+  - Increment `amountRefunded` by `data.amount / 100`.
+  - If `amountRefunded >= payment.amount`:
+    - Set `Payment.status = 'refunded'` and `Payment.refundStatus = 'full'`.
+    - Set `Order.paymentStatus = 'refunded'`.
+  - Else:
+    - Set `Payment.refundStatus = 'partial'`.
+- **`refund.failed`:**
+  - Mark subdocument status to `'failed'`, log provider error note, and alert administration.
+
+#### 6. Inventory & Stock Policies for Refunds
+- **Rule for Cancelled / Failed Orders:** Stock was **already restored** at the moment the order was marked `cancelled` or `failed`. Therefore, issuing a refund for an order in `cancelled` status must **NEVER** increment inventory stock again.
+- **Rule for Active / Delivered Orders (Returns):** If refunding an active or delivered order, stock restoration should be an explicit opt-in boolean (`restoreStock: true/false`) depending on whether items were verified as returned in resalable condition.
+
+---
+
+### 2.7 Address Book
 - **Status:** Implemented — full CRUD with default address management
 - **Tasks:**
   - Separate default shipping and default billing addresses.

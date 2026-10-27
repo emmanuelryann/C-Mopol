@@ -449,17 +449,6 @@ router.get('/verify/:reference', verifyRateLimiter, async (req, res, next) => {
       });
     }
 
-    // Check if order was cancelled while customer was on gateway
-    if (['cancelled', 'failed'].includes(order.status)) {
-      payment.status = 'failed';
-      payment.failureReason = `Order was ${order.status} prior to payment completion.`;
-      await payment.save();
-
-      const error = new Error(`Order was ${order.status}. Payment cannot be completed.`);
-      error.statusCode = 400;
-      return next(error);
-    }
-
     // Server-to-server verification with payment provider
     const verification = await paymentService.verifyPayment(
       payment.reference,
