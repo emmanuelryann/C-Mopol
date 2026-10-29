@@ -96,8 +96,8 @@ npm run dev
   - Send existing email -> `409 Conflict` (*"User already exists with this email"*).✅
   - Send invalid email format (e.g. `"not-an-email"`) -> `400 Bad Request` (*"\"email\" must be a valid email"*).✅
   - Send weak password (< 8 chars) -> `400 Bad Request` (*"\"password\" length must be at least 8 characters long"*).✅
-  - Missing required fields (e.g. omit `firstName`, `lastName`, `email`, or `password`) -> `400 Bad Request`.
-  - First name or last name under 2 chars -> `400 Bad Request`.
+  - Missing required fields (e.g. omit `firstName`, `lastName`, `email`, or `password`) -> `400 Bad Request`.✅
+  - First name or last name under 2 chars -> `400 Bad Request`.✅
 
 ### 2. Register Admin User
 - *Note:* Register a second user (e.g. `admin@example.com`) and manually update their `role: "admin"` in MongoDB (`db.users.updateOne({ email: "admin@example.com" }, { $set: { role: "admin" } })`), or use an existing admin.
@@ -114,32 +114,65 @@ npm run dev
 - **Expected Status:** `200 OK`
 - **Response:** `{ success: true, data: { user, accessToken } }`
 - **Edge Cases:**
-  - Invalid password -> `401 Unauthorized` ("Invalid credentials").✅
-  - Invalid email format -> `400 Bad Request` (*"\"email\" must be a valid email"*).
-  - Missing email or password -> `400 Bad Request`.
-  - Non-existent user email -> `401 Unauthorized` (*"Invalid credentials"*).
+  - Invalid password -> `401 Unauthorized` ("Invalid email or password.").✅
+  - Invalid email format -> `400 Bad Request` (*"\"email\" must be a valid email"*).✅
+  - Missing email or password -> `400 Bad Request`.✅
+  - Non-existent user email -> `401 Unauthorized` ("Invalid email or password.).✅
   - Suspended/deleted account -> `403 Forbidden`.
 
 ### 4. Refresh Access Token
-- **Endpoint:** `POST /api/v1/auth/refresh-token`
+- **Endpoint:** `POST /api/v1/auth/refresh`
 - **Auth:** None (Cookie based)
 - **Expected Status:** `200 OK`
-- **Verification:** Returns a brand-new `accessToken`.
+- **Verification:** Returns a brand-new `accessToken`.✅
 - **Edge Cases:**
-  - Missing `refreshToken` cookie -> `401 Unauthorized`.
-  - Invalid or expired `refreshToken` cookie -> `401 Unauthorized`.
+  - Missing `refreshToken` cookie -> `401 Unauthorized`.✅
+  - Invalid or expired `refreshToken` cookie -> `401 Unauthorized`.✅
 
 ### 5. Profile & Password Changes
-- `GET /api/v1/auth/profile` (Auth required) -> `200 OK` with user details.
-- `PATCH /api/v1/auth/profile` -> Update `firstName`, `lastName`, or `phone`.
-- `PATCH /api/v1/auth/change-password` -> Verify current password before updating to new password.
-- `POST /api/v1/auth/logout` -> Clears HTTP-Only cookie and clears DB refresh token.
+- `GET /api/v1/auth/me` (Auth required) -> `200 OK` with user details.
+- `POST /api/v1/auth/logout` -> Clears HTTP-Only cookies and deletes active session from DB.✅
+- `POST /api/v1/auth/change-password` -> Change password for logged-in user.
 - **Edge Cases:**
-  - `PATCH /profile`: Empty request body `{}` -> `400 Bad Request` (*"\"value\" must have at least 1 key"*).
-  - `PATCH /profile`: Invalid email format -> `400 Bad Request`.
-  - `PATCH /change-password`: Missing `currentPassword` or `newPassword` -> `400 Bad Request`.
-  - `PATCH /change-password`: `newPassword` under 8 chars -> `400 Bad Request`.
-  - `PATCH /change-password`: Incorrect `currentPassword` -> `401 Unauthorized` (*"Current password is incorrect"*).
+  - `POST /change-password`: Missing `currentPassword` or `newPassword` -> `400 Bad Request`.
+  - `POST /change-password`: `newPassword` under 8 chars -> `400 Bad Request`.
+  - `POST /change-password`: Incorrect `currentPassword` -> `400 Bad Request` (*"Current password is incorrect."*).
+  - `POST /change-password`: `newPassword` same as `currentPassword` -> `400 Bad Request` (*"New password cannot be the same as current password."*).
+  - **Password Change Session Revocation:** Changing password clears **all** active sessions across all devices and clears cookies. The user must log in again with the new password.
+
+### 6. Session Management & Multi-Device Control
+- **Database Model:** `Session` collection (`user`, `refreshTokenHash`, `deviceId`, `userAgent`, `ipAddress`, `lastActiveAt`, `expiresAt`).
+- **Endpoint:** `GET /api/v1/auth/sessions`
+  - **Auth:** Customer or Admin
+  - **Expected Status:** `200 OK`
+  - **Response:** Returns list of active sessions with `userAgent`, `ipAddress`, `lastActiveAt`, and `isCurrent: true/false`.
+- **Endpoint:** `DELETE /api/v1/auth/sessions/:sessionId`
+  - **Auth:** Customer or Admin (session owner)
+  - **Expected Status:** `200 OK`
+  - **Verification:** Deletes the specified remote session from DB. The revoked device immediately receives `401 Unauthorized` (*"Session has been revoked. Please log in again."*) on its next request.
+- **Session Rules & Multi-Device Enforcement Tests:**
+  1. **Same-Device Single Session Rule:**
+     - Log in on Browser 1 (e.g. Chrome on Mac).
+     - Log in on Browser 2 or new tab on the same device (e.g. Firefox on Mac or passing same `x-device-id`).
+     - **Verification:** Only **one** session exists for that device in the DB. The old Browser 1 session is superseded and immediately revoked (`401 Unauthorized`).
+  2. **Two Devices Allowed (Max 2 Total Sessions):**
+     - Log in on Device 1 (e.g. Laptop).
+     - Log in on Device 2 (e.g. Mobile phone with mobile User-Agent or `x-device-id: phone-1`).
+     - **Verification:** Both devices are active simultaneously (`Session.countDocuments` = 2). Both can access authenticated routes.
+  3. **Third Device Blocked (Session Cap Enforced):**
+     - Try logging in on Device 3 (e.g. Work PC with `x-device-id: pc-3`).
+     - **Expected Status:** `403 Forbidden` (*"Maximum active sessions reached (2). Please log out from another device first."*).
+  4. **Revocation & Re-Login Slot Recovery:**
+     - From Device 1, call `DELETE /api/v1/auth/sessions/:phoneSessionId` to revoke Device 2 (or log out from Device 2).
+     - Try logging in on Device 3 again.
+     - **Expected Status:** `200 OK` — Device 3 logs in successfully!
+  5. **Admin Suspension / Deletion Cascade:**
+     - When admin suspends or deletes a user via `PATCH /api/v1/admin/users/:id`, all active sessions for that user are immediately deleted from the database.
+- **Edge Cases:**
+  - `DELETE /sessions/:sessionId`: Invalid session ID format -> `400 Bad Request` (*"Invalid session ID."*).
+  - `DELETE /sessions/:sessionId`: Attempting to revoke own current session -> `400 Bad Request` (*"Cannot revoke your current session. Use the logout endpoint instead."*).
+  - `DELETE /sessions/:sessionId`: Non-existent session ID -> `404 Not Found` (*"Session not found."*).
+  - Accessing with a revoked session token -> `401 Unauthorized` (*"Session has been revoked. Please log in again."*).
 
 ---
 
@@ -587,6 +620,9 @@ console.log('\nHeader [x-paystack-signature]:\n', hash, '\n');
 | **Auth** | Refresh token stored in HTTP-Only Cookie | ✅ | [ ] |
 | **Auth** | Password salted with bcrypt (`>= 10 rounds`) | ✅ | [ ] |
 | **Auth** | Admins cannot self-edit status or self-delete | ✅ | [ ] |
+| **Auth** | Same-device logins deduplicated into 1 active session | ✅ | [ ] |
+| **Auth** | Multi-device logins capped at 2 sessions per user | ✅ | [ ] |
+| **Auth** | Password change/reset immediately revokes all sessions | ✅ | [ ] |
 | **Catalog** | Inactive category products hidden from public | ✅ | [ ] |
 | **Catalog** | Category deletion blocked if products exist | ✅ | [ ] |
 | **Cart** | Server recalculates subtotals; client prices ignored | ✅ | [ ] |

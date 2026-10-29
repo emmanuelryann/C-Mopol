@@ -4,6 +4,7 @@ import User from '../models/user.js';
 import Product from '../models/product.js';
 import Category from '../models/category.js';
 import Order from '../models/order.js';
+import Session from '../models/session.js';
 import { authenticate, authorize } from '../middlewares/auth.js';
 import {
   validate,
@@ -279,9 +280,9 @@ router.patch('/users/:id', validate(adminUpdateUser), async (req, res, next) => 
     if (req.body.status !== undefined) {
       user.status = req.body.status;
 
-      // Invalidate sessions when suspending or deleting
+      // Invalidate all sessions when suspending or deleting
       if (req.body.status !== 'active') {
-        user.refreshToken = null;
+        await Session.deleteMany({ user: user._id });
       }
     }
 

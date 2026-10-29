@@ -1,13 +1,20 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/user.js';
+import Session from '../models/session.js';
 
 /**
- * authenticate — verifies the access token from the cookie
+ * authenticate — verifies the access token from the cookie,
+ * validates the associated session is still active,
  * and attaches the user to req.user.
  */
 const authenticate = async (req, res, next) => {
   try {
-    const token = req.cookies?.accessToken;
+    const authHeader = req.headers.authorization;
+    const token =
+      req.cookies?.accessToken ||
+      (authHeader && authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7).trim()
+        : null);
 
     if (!token) {
       const error = new Error('Not authenticated. Please log in.');
@@ -17,7 +24,11 @@ const authenticate = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
 
-    const user = await User.findById(decoded.id);
+    // Fetch user and validate session in parallel for performance
+    const [user, session] = await Promise.all([
+      User.findById(decoded.id),
+      decoded.sid ? Session.findById(decoded.sid) : Promise.resolve(null),
+    ]);
 
     if (!user) {
       const error = new Error('User no longer exists.');
@@ -29,6 +40,18 @@ const authenticate = async (req, res, next) => {
       const error = new Error('Your account has been suspended or deleted.');
       error.statusCode = 403;
       return next(error);
+    }
+
+    // Validate session is still active (immediate revocation on password change, logout, etc.)
+    if (decoded.sid) {
+      if (!session || session.user.toString() !== user._id.toString()) {
+        const error = new Error(
+          'Session has been revoked. Please log in again.',
+        );
+        error.statusCode = 401;
+        return next(error);
+      }
+      req.sessionId = session._id.toString();
     }
 
     req.user = user;
@@ -62,7 +85,9 @@ const authorize = (...roles) => (req, res, next) => {
   }
 
   if (!roles.includes(req.user.role)) {
-    const error = new Error('You do not have permission to perform this action.');
+    const error = new Error(
+      'You do not have permission to perform this action.',
+    );
     error.statusCode = 403;
     return next(error);
   }

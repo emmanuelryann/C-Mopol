@@ -48,10 +48,6 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    refreshToken: {
-      type: String,
-      select: false,
-    },
     passwordResetToken: {
       type: String,
       select: false,
