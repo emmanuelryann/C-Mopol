@@ -138,14 +138,12 @@ router.post('/login', validate(loginUser), async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Login successful.',
-      data: {
-        user: {
-          _id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          role: user.role,
-        },
+      user: {
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
       },
     });
   } catch (err) {

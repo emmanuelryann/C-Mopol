@@ -74,7 +74,7 @@ npm run dev
 
 ## Phase 1: Authentication & User Profile
 
-### 1. Register Customer
+### 1. Register Customer✅
 - **Endpoint:** `POST /api/v1/auth/register`
 - **Auth:** Public
 - **Request Body:**
@@ -93,8 +93,11 @@ npm run dev
   - Sets HTTP-Only cookie `refreshToken`.
   - `role` must be `'customer'` (customers cannot self-assign `'admin'`).
 - **Edge Cases:**
-  - Send existing email -> `409 Conflict`.
-  - Send weak password (< 8 chars) -> `400 Bad Request`.
+  - Send existing email -> `409 Conflict` (*"User already exists with this email"*).✅
+  - Send invalid email format (e.g. `"not-an-email"`) -> `400 Bad Request` (*"\"email\" must be a valid email"*).✅
+  - Send weak password (< 8 chars) -> `400 Bad Request` (*"\"password\" length must be at least 8 characters long"*).✅
+  - Missing required fields (e.g. omit `firstName`, `lastName`, `email`, or `password`) -> `400 Bad Request`.
+  - First name or last name under 2 chars -> `400 Bad Request`.
 
 ### 2. Register Admin User
 - *Note:* Register a second user (e.g. `admin@example.com`) and manually update their `role: "admin"` in MongoDB (`db.users.updateOne({ email: "admin@example.com" }, { $set: { role: "admin" } })`), or use an existing admin.
@@ -111,7 +114,10 @@ npm run dev
 - **Expected Status:** `200 OK`
 - **Response:** `{ success: true, data: { user, accessToken } }`
 - **Edge Cases:**
-  - Invalid password -> `401 Unauthorized` ("Invalid credentials").
+  - Invalid password -> `401 Unauthorized` ("Invalid credentials").✅
+  - Invalid email format -> `400 Bad Request` (*"\"email\" must be a valid email"*).
+  - Missing email or password -> `400 Bad Request`.
+  - Non-existent user email -> `401 Unauthorized` (*"Invalid credentials"*).
   - Suspended/deleted account -> `403 Forbidden`.
 
 ### 4. Refresh Access Token
@@ -119,12 +125,21 @@ npm run dev
 - **Auth:** None (Cookie based)
 - **Expected Status:** `200 OK`
 - **Verification:** Returns a brand-new `accessToken`.
+- **Edge Cases:**
+  - Missing `refreshToken` cookie -> `401 Unauthorized`.
+  - Invalid or expired `refreshToken` cookie -> `401 Unauthorized`.
 
 ### 5. Profile & Password Changes
 - `GET /api/v1/auth/profile` (Auth required) -> `200 OK` with user details.
 - `PATCH /api/v1/auth/profile` -> Update `firstName`, `lastName`, or `phone`.
 - `PATCH /api/v1/auth/change-password` -> Verify current password before updating to new password.
 - `POST /api/v1/auth/logout` -> Clears HTTP-Only cookie and clears DB refresh token.
+- **Edge Cases:**
+  - `PATCH /profile`: Empty request body `{}` -> `400 Bad Request` (*"\"value\" must have at least 1 key"*).
+  - `PATCH /profile`: Invalid email format -> `400 Bad Request`.
+  - `PATCH /change-password`: Missing `currentPassword` or `newPassword` -> `400 Bad Request`.
+  - `PATCH /change-password`: `newPassword` under 8 chars -> `400 Bad Request`.
+  - `PATCH /change-password`: Incorrect `currentPassword` -> `401 Unauthorized` (*"Current password is incorrect"*).
 
 ---
 
@@ -142,6 +157,11 @@ npm run dev
   }
   ```
 - **Expected Status:** `201 Created`
+- **Edge Cases:**
+  - Missing `name` or `slug` -> `400 Bad Request`.
+  - Invalid parent ObjectId format (e.g. `"123-bad"`) -> `400 Bad Request` (*"\"parent\" fails to match the ObjectId pattern"*).
+  - Duplicate slug -> `409 Conflict`.
+  - Non-admin authorization token -> `403 Forbidden`.
 
 ### 2. Category Hierarchy & Parent Cycle Prevention
 - Create child category:
@@ -152,8 +172,10 @@ npm run dev
     "parent": "<ELECTRONICS_ID>"
   }
   ```
-- **Edge Case (Cycle Prevention):**
+- **Edge Cases:**
   - Try updating `Electronics` to have `parent: "<LAPTOPS_ID>"` -> `400 Bad Request` (*"A category cannot be its own descendant."*).
+  - `PATCH /categories/:id`: Empty payload `{}` -> `400 Bad Request` (*"\"value\" must have at least 1 key"*).
+  - Invalid category ID in URL param -> `400 Bad Request` (*"Invalid category ID"*).
 
 ### 3. Public Category Listing & Tree
 - **Endpoint:** `GET /api/v1/categories` (Public)
@@ -164,7 +186,9 @@ npm run dev
 - `PATCH /api/v1/categories/:id/archive` -> Sets `isActive: false`.
 - `PATCH /api/v1/categories/:id/restore` -> Restores `isActive: true`.
 - `DELETE /api/v1/categories/:id`:
-  - **Edge Case:** Try deleting a category that has products -> `400 Bad Request` (*"Cannot delete category that contains products"*).
+- **Edge Cases:**
+  - Try deleting a category that has products -> `400 Bad Request` (*"Cannot delete category that contains products"*).
+  - Deleting, archiving, or restoring with invalid ID param -> `400 Bad Request`.
 
 ---
 
@@ -188,6 +212,12 @@ npm run dev
   }
   ```
 - **Expected Status:** `201 Created`
+- **Edge Cases:**
+  - Missing required fields (e.g. omit `name`, `price`, or `category`) -> `400 Bad Request`.
+  - Negative price (`price: -10`) -> `400 Bad Request` (*"\"price\" must be greater than or equal to 0"*).
+  - Negative or non-integer stock (`stock: -5` or `stock: 2.5`) -> `400 Bad Request`.
+  - Invalid category ObjectId format -> `400 Bad Request` (*"\"category\" fails to match the ObjectId pattern"*).
+  - Non-existent category ID -> `404 Not Found` (*"Category not found"*).
 
 ### 2. Public Catalog Filtering & Active Category Protection
 - **Endpoint:** `GET /api/v1/products`
@@ -199,8 +229,12 @@ npm run dev
 
 ### 3. Archive & Restore Validation
 - `PATCH /api/v1/products/:id/archive` -> Product archived.
-- Try restoring product whose category is archived -> `400 Bad Request` (*"Cannot restore a product in an inactive category."*).
-- `PATCH /api/v1/products/:id` (General update) -> Cannot send `{ "isActive": true }` to bypass category check (enforces dedicated `/restore` route).
+- `PATCH /api/v1/products/:id/restore` -> Product restored.
+- **Edge Cases:**
+  - Try restoring product whose category is archived -> `400 Bad Request` (*"Cannot restore a product in an inactive category."*).
+  - `PATCH /api/v1/products/:id` (General update): Cannot send `{ "isActive": true }` to bypass category check (enforces dedicated `/restore` route).
+  - `PATCH /api/v1/products/:id`: Empty update payload `{}` -> `400 Bad Request` (*"\"value\" must have at least 1 key"*).
+  - `PATCH /api/v1/products/:id`: Update with negative price or negative stock -> `400 Bad Request`.
 
 ### 4. Public Product Search
 - `GET /api/v1/products/search?q=gaming` -> Case-insensitive search on name/description.
@@ -228,11 +262,18 @@ npm run dev
   }
   ```
 - **Expected Status:** `201 Created`
+- **Edge Cases:**
+  - Missing required fields (e.g. omit `fullName`, `phone`, `addressLine1`, `city`, `country`) -> `400 Bad Request`.
+  - Invalid label value (e.g. `"label": "office"`) -> `400 Bad Request` (*"\"label\" must be one of [home, work, other]"*).
 
 ### 2. Default Address Auto-Switching
 - Create a second address with `"isDefault": true`.
 - **Verification:** The first address automatically has `isDefault` switched to `false`.
 - `PATCH /api/v1/addresses/:id/default` -> Makes specific address default.
+- **Edge Cases:**
+  - `PATCH /api/v1/addresses/:id`: Empty payload `{}` -> `400 Bad Request` (*"\"value\" must have at least 1 key"*).
+  - Accessing or modifying address belonging to another user -> `404 Not Found`.
+  - Invalid address ObjectId format in URL param -> `400 Bad Request`.
 
 ---
 
@@ -253,6 +294,10 @@ npm run dev
   - Server calculates `subtotal` and `total` based strictly on DB product price.
   - Adding same item again increments quantity without creating duplicate lines.
 - **Edge Cases:**
+  - Missing `product` or `quantity` -> `400 Bad Request`.
+  - Quantity zero or negative (`quantity: 0` or `-2`) -> `400 Bad Request` (*"\"quantity\" must be greater than or equal to 1"*).
+  - Decimal quantity (`quantity: 1.5`) -> `400 Bad Request` (*"\"quantity\" must be an integer"*).
+  - Invalid product ObjectId format -> `400 Bad Request`.
   - Send uppercase hex Product ID (`/^[0-9a-fA-F]{24}$/`) -> Correctly normalized and avoids duplicate items.
   - Add quantity exceeding current stock -> `400 Bad Request`.
   - Add product from an inactive category -> `400 Bad Request`.
@@ -267,6 +312,9 @@ npm run dev
 - `PATCH /api/v1/cart/items/:productId` -> `{ "quantity": 3 }`.
 - `DELETE /api/v1/cart/items/:productId` -> Removes single item.
 - `DELETE /api/v1/cart` -> Clears entire cart.
+- **Edge Cases:**
+  - `PATCH /items/:productId`: Update quantity to zero or negative -> `400 Bad Request`.
+  - `PATCH /items/:productId` or `DELETE /items/:productId`: Invalid `productId` in URL -> `400 Bad Request`.
 
 ---
 
@@ -309,6 +357,10 @@ npm run dev
 - **Edge Cases:**
   - Checkout with empty cart -> `400 Bad Request`.
   - Supply both `addressId` and `shippingAddress` -> `400 Bad Request` (*"Provide either a saved address ID or a shipping address, not both."*).
+  - Supply neither `addressId` nor `shippingAddress` -> `400 Bad Request` (*"Provide either a saved address ID or a shipping address, not both."*).
+  - Missing or invalid `paymentMethod` (e.g. `"crypto"`) -> `400 Bad Request` (*"\"paymentMethod\" must be one of [card, mobile_money, bank_transfer, cash_on_delivery]"*).
+  - Inline `shippingAddress` missing required subfields (e.g. missing `fullName` or `city`) -> `400 Bad Request`.
+  - `notes` exceeding 500 characters -> `400 Bad Request`.
   - Out of stock / inactive product in cart -> `400 Bad Request` with structured item errors.
 
 ### 2. Customer Order Queries
@@ -323,6 +375,9 @@ npm run dev
   - `status` updates to `"cancelled"`.
   - `cancelledAt` timestamp is set.
   - Product stock is atomically restored: `$inc: { stock: quantity }`.
+- **Edge Cases:**
+  - Cancellation `reason` exceeding 500 characters -> `400 Bad Request`.
+  - Cancel non-pending order (e.g. status is `"shipped"`) -> `400 Bad Request` (*"Only pending orders can be cancelled."*).
 - **Double-Click Race Test:**
   - Fire two rapid requests to `PATCH /orders/:id/cancel`.
   - **Result:** First request succeeds; second request returns `400 Bad Request` (*"Only pending orders can be cancelled."*). Stock is restored **only once**.
@@ -335,8 +390,10 @@ npm run dev
   - `pending` -> `processing`, `cancelled`, `failed`
   - `processing` -> `shipped`, `cancelled`
   - `shipped` -> `delivered`
-- **Invalid Transition Test:**
-  - Try moving `delivered` -> `pending` -> `400 Bad Request` (*"Cannot transition from delivered to pending"*).
+- **Edge Cases:**
+  - Missing `status` or invalid status enum (e.g. `"dispatched"`) -> `400 Bad Request`.
+  - `cancellationReason` exceeding 500 characters -> `400 Bad Request`.
+  - Illegal status transition (e.g. try moving `delivered` -> `pending`) -> `400 Bad Request` (*"Cannot transition from delivered to pending"*).
   - Transitioning to `cancelled` or `failed` restores inventory stock automatically.
 
 ---
@@ -350,6 +407,8 @@ npm run dev
 - **Verification:**
   - `revenue.total`: Adds up **only** orders with `paymentStatus: 'completed'`. Unpaid pending orders are not counted as revenue.
   - Returns counts for users, products (active vs archived), low-stock alert count (`stock <= 10`), out-of-stock count, and recent 5 orders.
+- **Edge Cases:**
+  - Non-admin authorization token -> `403 Forbidden`.
 
 ### 2. User Management & Self-Lockout Protection
 - **Endpoint:** `GET /api/v1/admin/users?search=John&role=customer&status=active`
@@ -360,18 +419,32 @@ npm run dev
   - Update `role` or `status` (`active`, `suspended`, `deleted`).
   - **Self-Edit Protection Test:** Log in as admin and try modifying your own role/status -> `400 Bad Request` (*"Admins cannot modify their own status or role."*). Handles uppercase/lowercase ID matching.
   - Suspending or deleting a user automatically clears their refresh token, invalidating active sessions.
+- **Edge Cases:**
+  - Empty update payload `{}` -> `400 Bad Request` (*"\"value\" must have at least 1 key"*).
+  - Invalid `role` enum (e.g. `"superuser"`) -> `400 Bad Request` (*"\"role\" must be one of [customer, admin]"*).
+  - Invalid `status` enum (e.g. `"banned"`) -> `400 Bad Request` (*"\"status\" must be one of [active, suspended, deleted]"*).
+  - Invalid user ObjectId format in URL param -> `400 Bad Request` (*"Invalid user ID."*).
+  - Non-existent user ID -> `404 Not Found` (*"User not found."*).
 
 ### 3. Inventory Monitoring
 - **Endpoint:** `GET /api/v1/admin/inventory?status=low_stock`
   - Returns items with populated category, SKU, stock count, and total inventory valuation.
+- **Edge Cases:**
+  - Non-admin authorization token -> `403 Forbidden`.
 
 ### 4. Manual Payment Status Update
 - **Endpoint:** `PATCH /api/v1/admin/orders/:id/payment`
 - **Auth:** Admin
+- **Request Body:** `{ "paymentStatus": "completed" }`
 - **Verification:**
   - Allowed transitions: `pending` -> `completed`/`failed`; `failed` -> `pending`/`completed`; `completed` -> `refunded`.
   - **Gateway Rule:** Cannot mark an online order as completed manually; only orders with `paymentMethod === 'cash_on_delivery'` or `'bank_transfer'` can be manually completed.
   - Cannot mark a cancelled or failed order as paid -> `400 Bad Request`.
+- **Edge Cases:**
+  - Missing `paymentStatus` in request body -> `400 Bad Request` (*"\"paymentStatus\" is required"*).
+  - Invalid `paymentStatus` enum (e.g. `"reversed"`) -> `400 Bad Request` (*"\"paymentStatus\" must be one of [pending, completed, failed, refunded]"*).
+  - Invalid order ObjectId format in URL param -> `400 Bad Request` (*"Invalid order ID."*).
+  - Non-existent order ID -> `404 Not Found` (*"Order not found."*).
 
 ---
 
@@ -393,6 +466,13 @@ The payment module runs with mock provider simulation in development, complete w
 - **Response Verification:**
   - Returns `{ reference, authorizationUrl, accessCode, amount, currency }`.
   - Payment amount is strictly derived from `order.totalAmount` on the server.
+- **Edge Cases:**
+  - Missing `orderId` -> `400 Bad Request` (*"\"orderId\" is required"*).
+  - Invalid `orderId` ObjectId format -> `400 Bad Request` (*"\"orderId\" fails to match the ObjectId pattern"*).
+  - Invalid `callbackUrl` URI format (e.g. `"not-a-url"`) -> `400 Bad Request` (*"\"callbackUrl\" must be a valid uri"*).
+  - Initializing payment for already paid order (`paymentStatus: 'completed'`) -> `400 Bad Request` (*"This order has already been paid for."*).
+  - Initializing payment for cancelled/failed order -> `400 Bad Request` (*"Cannot pay for a cancelled order."*).
+  - Initializing payment for another customer's order -> `403 Forbidden` (*"Not authorized to access this order."*).
 - **Security & Concurrency Tests:**
   1. **COD Check:** Try initializing payment for an order with `paymentMethod: "cash_on_delivery"` -> `400 Bad Request` (*"Cash on delivery orders cannot be paid online."*).
   2. **Callback URL Origin Check:** Try sending `"callbackUrl": "https://localhost:3000.evil.com"` -> `400 Bad Request` (*"Invalid callback URL."*).
@@ -415,6 +495,11 @@ The payment module runs with mock provider simulation in development, complete w
     - Reference containing `ABANDON` -> `Payment.status` transitions to `abandoned`.
   - **Late Payment / Retry Recovery:**
     - If a payment is initially marked `abandoned` or `failed` and then customer succeeds on retry, `/verify` transitions `status: { $in: ['pending', 'abandoned', 'failed'] }` to `completed` and marks the order paid!
+- **Edge Cases:**
+  - Missing or whitespace-only reference in URL param -> `400 Bad Request` (*"Payment reference is required."*).
+  - Non-existent payment reference -> `404 Not Found` (*"Payment reference not found."*).
+  - Customer attempts to verify another customer's payment -> `403 Forbidden` (*"Not authorized to access this payment."*).
+  - Amount or currency mismatch between gateway response and stored payment -> `400 Bad Request` (*"Payment amount or currency mismatch detected. Please contact support."*).
 
 ### 3. Webhook Simulation (`POST /api/v1/payments/webhook`)
 - **Endpoint:** `POST /api/v1/payments/webhook`
@@ -423,6 +508,7 @@ The payment module runs with mock provider simulation in development, complete w
 
 #### A. Webhook Signature Validation Test
 - Send request with header `x-paystack-signature: invalid_signature` -> `401 Unauthorized` (*"Invalid webhook signature."*).
+- Send request without `x-paystack-signature` header -> `401 Unauthorized` (*"Invalid webhook signature."*).
 - In development mode, header `x-paystack-signature: mock_valid_signature` is accepted.
 
 #### B. Handle `charge.success` Event
@@ -451,6 +537,10 @@ The payment module runs with mock provider simulation in development, complete w
 #### C. Strict Amount Mismatch Guard
 - Send `charge.success` where `data.amount` does not match `payment.amount * 100`.
 - **Result:** Payment is transitioned to `failed` (`failureReason: "Amount or currency mismatch"`). Order is **NOT** marked paid!
+- **Edge Cases:**
+  - Webhook payload missing `event`, `data`, or `reference` -> Ignored safely with `200 OK` (*"Ignored: Missing event or reference data."*).
+  - Webhook reference does not exist in DB -> `200 OK` (*"Ignored: Payment with reference \"...\" not found."*).
+  - Amount or currency mismatch in webhook payload -> Payment marked `failed`, order remains unpaid, returns `200 OK` (*"Mismatch recorded."*).
 
 ### 4. Admin Reconciliation Queue
 - **Endpoint:** `GET /api/v1/payments/admin/reconciliation`
@@ -459,6 +549,8 @@ The payment module runs with mock provider simulation in development, complete w
 - **What It Catches:**
   1. **Cancelled / Failed Orders with Paid Money:** If customer completed payment on the gateway after their order was cancelled, payment is completed but order remains cancelled. This route surfaces the payment with `reconciliationReason: "order_cancelled_or_failed"` so admin can issue a refund.
   2. **Duplicate Session Charges:** If customer paid both old and new payment sessions for the same order, flags payment with `reconciliationReason: "duplicate_completed_payment"`.
+- **Edge Cases:**
+  - Non-admin authorization token -> `403 Forbidden`.
 
 ---
 
