@@ -7,7 +7,7 @@ This guide is a comprehensive, step-by-step testing manual and architectural rev
 ## Table of Contents
 1. [Environment Setup & Prerequisites](#1-environment-setup--prerequisites)
 2. [Quick Reference: Base URL & Auth Tokens](#2-quick-reference-base-url--auth-tokens)
-3. [Phase 1: Authentication & User Profile](#phase-1-authentication--user-profile)
+3. [Phase 1: Authentication](#phase-1-authentication)
 4. [Phase 2: Categories Management](#phase-2-categories-management)
 5. [Phase 3: Products Catalog & Inventory](#phase-3-products-catalog--inventory)
 6. [Phase 4: Customer Address Book](#phase-4-customer-address-book)
@@ -72,7 +72,7 @@ npm run dev
 
 ---
 
-## Phase 1: Authentication & User Profile
+## Phase 1: Authentication
 
 ### 1. Register Customer✅
 - **Endpoint:** `POST /api/v1/auth/register`
@@ -120,27 +120,115 @@ npm run dev
   - Non-existent user email -> `401 Unauthorized` ("Invalid email or password.).✅
   - Suspended/deleted account -> `403 Forbidden`.
 
-### 4. Refresh Access Token
+### 4. Logout
+- **Endpoint:** `POST /api/v1/auth/logout`
+- **Auth:** Customer or Admin (Auth cookie required)
+- **Expected Status:** `200 OK`
+- **Response Verification:**
+  - Response body: `{ "success": true, "message": "Logged out successfully." }`
+  - Clears `accessToken` and `refreshToken` HTTP-Only cookies.
+  - Deletes the active device session from the database.
+  - Subsequent calls to protected endpoints (e.g. `GET /api/v1/auth/me`) immediately return `401 Unauthorized`.
+- **Edge Cases:**
+  - Unauthenticated request (missing `accessToken` cookie) -> `401 Unauthorized` (*"Not authenticated. Please log in."*).
+  - Calling with expired or invalid token -> `401 Unauthorized`.
+
+### 5. Current User Details (`/auth/me`)
+- **Endpoint:** `GET /api/v1/auth/me`
+- **Auth:** Customer or Admin (Auth cookie required)
+- **Expected Status:** `200 OK`
+- **Response Verification:**
+  - Returns authenticated user details:
+    ```json
+    {
+      "success": true,
+      "message": "User profile retrieved.",
+      "data": {
+        "user": {
+          "_id": "<USER_ID>",
+          "firstName": "John",
+          "lastName": "Doe",
+          "email": "customer@example.com",
+          "role": "customer",
+          "phone": "+233201234567",
+          "isEmailVerified": false,
+          "lastLogin": "<TIMESTAMP>",
+          "createdAt": "<TIMESTAMP>"
+        }
+      }
+    }
+    ```
+  - Sensitive fields (`password`, `refreshToken`, `passwordResetToken`) are strictly excluded.
+- **Edge Cases:**
+  - Missing `accessToken` cookie -> `401 Unauthorized` (*"Not authenticated. Please log in."*).
+  - Invalid or malformed token -> `401 Unauthorized` (*"Invalid token."*).
+  - Expired access token -> `401 Unauthorized` (*"Access token expired. Please refresh."*).
+  - Suspended or deleted account -> `403 Forbidden` (*"Your account has been suspended or deleted."*).
+
+### 6. Refresh Access Token
 - **Endpoint:** `POST /api/v1/auth/refresh`
 - **Auth:** None (Cookie based)
 - **Expected Status:** `200 OK`
-- **Verification:** Returns a brand-new `accessToken`.✅
+- **Verification:**
+  - Response body: `{ "success": true, "message": "Tokens refreshed successfully." }`
+  - Sets brand-new `accessToken` and `refreshToken` cookies (Token Rotation).
+  - Rotates `refreshTokenHash` in the active database session.
 - **Edge Cases:**
-  - Missing `refreshToken` cookie -> `401 Unauthorized`.✅
-  - Invalid or expired `refreshToken` cookie -> `401 Unauthorized`.✅
+  - Missing `refreshToken` cookie -> `401 Unauthorized` (*"No refresh token provided."*).✅
+  - Invalid or expired `refreshToken` cookie -> `401 Unauthorized` (*"Invalid or expired refresh token. Please log in again."*).✅
+  - Replay attack / reusing old rotated token -> `401 Unauthorized` (*"Invalid refresh token. Please log in again."*).
+  - Suspended/deleted account -> `403 Forbidden` (*"Your account has been suspended or deleted."*).
 
-### 5. Profile & Password Changes
-- `GET /api/v1/auth/me` (Auth required) -> `200 OK` with user details.
-- `POST /api/v1/auth/logout` -> Clears HTTP-Only cookies and deletes active session from DB.✅
-- `POST /api/v1/auth/change-password` -> Change password for logged-in user.
+### 7. Change Password
+- **Endpoint:** `POST /api/v1/auth/change-password`
+- **Auth:** Authenticated user (Auth cookie required)
+- **Request Body:**
+  ```json
+  {
+    "currentPassword": "Password123!",
+    "newPassword": "NewPassword123!"
+  }
+  ```
+- **Expected Status:** `200 OK`
+- **Response Verification:**
+  - Response: `{ "success": true, "message": "Password changed successfully. Please log in again." }`
+  - Password updated in database (bcrypt hashed).
+  - Clears auth cookies and revokes **all** active sessions across all devices (`Session.deleteMany({ user: req.user._id })`).
+  - The user must log in again with the new password.
 - **Edge Cases:**
-  - `POST /change-password`: Missing `currentPassword` or `newPassword` -> `400 Bad Request`.
-  - `POST /change-password`: `newPassword` under 8 chars -> `400 Bad Request`.
-  - `POST /change-password`: Incorrect `currentPassword` -> `400 Bad Request` (*"Current password is incorrect."*).
-  - `POST /change-password`: `newPassword` same as `currentPassword` -> `400 Bad Request` (*"New password cannot be the same as current password."*).
-  - **Password Change Session Revocation:** Changing password clears **all** active sessions across all devices and clears cookies. The user must log in again with the new password.
+  - Missing `currentPassword` or `newPassword` -> `400 Bad Request`.
+  - `newPassword` under 8 chars -> `400 Bad Request` (*"\"newPassword\" length must be at least 8 characters long"*).
+  - Incorrect `currentPassword` -> `400 Bad Request` (*"Current password is incorrect."*).
+  - `newPassword` same as `currentPassword` -> `400 Bad Request` (*"New password cannot be the same as current password."*).
+  - Unauthenticated request -> `401 Unauthorized` (*"Not authenticated. Please log in."*).
 
-### 6. Session Management & Multi-Device Control
+### 8. Forgot Password
+- **Endpoint:** `POST /api/v1/auth/forgot-password`
+- **Auth:** Public
+- **Request Body:**
+  ```json
+  {
+    "email": "customer@example.com"
+  }
+  ```
+- **Expected Status:** `200 OK`
+- **Response Verification:**
+  - Response body:
+    ```json
+    {
+      "success": true,
+      "message": "If an account with that email exists, a password reset link has been sent."
+    }
+    ```
+  - In development console: Server logs `🔑 [DEV ONLY] Password reset token for customer@example.com: <RESET_TOKEN>`.
+  - In MongoDB: Saves SHA-256 hash in `user.passwordResetToken` and sets `passwordResetExpires` to 10 minutes from now.
+  - Returns generic `200 OK` message even if email does not exist (anti-enumeration security safeguard).
+- **Edge Cases:**
+  - Missing `email` field -> `400 Bad Request` (*"\"email\" is required"*).
+  - Invalid email format (e.g. `"not-an-email"`) -> `400 Bad Request` (*"\"email\" must be a valid email"*).
+  - Non-existent user email -> Returns `200 OK` generic message; no token generated or stored in database.
+
+### 9. Session Management & Multi-Device Control
 - **Database Model:** `Session` collection (`user`, `refreshTokenHash`, `deviceId`, `userAgent`, `ipAddress`, `lastActiveAt`, `expiresAt`).
 - **Endpoint:** `GET /api/v1/auth/sessions`
   - **Auth:** Customer or Admin
@@ -478,6 +566,37 @@ npm run dev
   - Invalid `paymentStatus` enum (e.g. `"reversed"`) -> `400 Bad Request` (*"\"paymentStatus\" must be one of [pending, completed, failed, refunded]"*).
   - Invalid order ObjectId format in URL param -> `400 Bad Request` (*"Invalid order ID."*).
   - Non-existent order ID -> `404 Not Found` (*"Order not found."*).
+
+### 5. Password Reset (Recovery Flow)
+- **Endpoint:** `POST /api/v1/auth/reset-password/:token`
+- **Auth:** Public (Token based)
+- **URL Parameter:** `:token` (The raw 32-byte hex reset token generated during `POST /api/v1/auth/forgot-password` and logged to the developer console).
+- **Request Body:**
+  ```json
+  {
+    "password": "NewStrongPassword123!"
+  }
+  ```
+- **Expected Status:** `200 OK`
+- **Response Verification:**
+  - Response body:
+    ```json
+    {
+      "success": true,
+      "message": "Password reset successful. Please log in with your new password."
+    }
+    ```
+  - Password updated in database (bcrypt hashed via User model pre-save hook).
+  - Clears `passwordResetToken` and `passwordResetExpires` fields (prevents token reuse).
+  - Revokes and clears **all** active sessions across all devices (`Session.deleteMany({ user: user._id })`), forcing re-login everywhere.
+  - Clears `accessToken` and `refreshToken` cookies.
+  - Logging in with old password now returns `401 Unauthorized`; logging in with new password returns `200 OK`.
+- **Edge Cases:**
+  - Missing `password` field -> `400 Bad Request` (*"\"password\" is required"*).
+  - `password` under 8 chars -> `400 Bad Request` (*"\"password\" length must be at least 8 characters long"*).
+  - Invalid or malformed token string in URL -> `400 Bad Request` (*"Token is invalid or has expired."*).
+  - Expired token (> 10 minutes elapsed since generation) -> `400 Bad Request` (*"Token is invalid or has expired."*).
+  - Token replay: Reusing the token after a successful reset -> `400 Bad Request` (*"Token is invalid or has expired."*).
 
 ---
 
