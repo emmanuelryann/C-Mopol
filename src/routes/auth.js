@@ -221,16 +221,6 @@ router.post('/login', validate(loginUser), async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Login successful.',
-      data: {
-        user: {
-          _id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          role: user.role,
-        },
-        accessToken,
-      },
       user: {
         _id: user._id,
         firstName: user.firstName,
@@ -340,9 +330,6 @@ router.post('/refresh', async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Tokens refreshed successfully.',
-      data: {
-        accessToken: newAccessToken,
-      },
       accessToken: newAccessToken,
     });
   } catch (err) {
@@ -356,18 +343,16 @@ router.get('/me', authenticate, async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'User profile retrieved.',
-      data: {
-        user: {
-          _id: req.user._id,
-          firstName: req.user.firstName,
-          lastName: req.user.lastName,
-          email: req.user.email,
-          role: req.user.role,
-          phone: req.user.phone,
-          isEmailVerified: req.user.isEmailVerified,
-          lastLogin: req.user.lastLogin,
-          createdAt: req.user.createdAt,
-        },
+      user: {
+        _id: req.user._id,
+        firstName: req.user.firstName,
+        lastName: req.user.lastName,
+        email: req.user.email,
+        role: req.user.role,
+        phone: req.user.phone,
+        isEmailVerified: req.user.isEmailVerified,
+        lastLogin: req.user.lastLogin,
+        createdAt: req.user.createdAt,
       },
     });
   } catch (err) {
@@ -387,18 +372,16 @@ router.get('/sessions', authenticate, async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Active sessions retrieved.',
-      data: {
-        sessions: sessions.map((s) => ({
-          _id: s._id,
-          userAgent: s.userAgent,
-          ipAddress: s.ipAddress,
-          lastActiveAt: s.lastActiveAt,
-          createdAt: s.createdAt,
-          isCurrent: s._id.toString() === req.sessionId?.toString(),
-        })),
-        count: sessions.length,
-        maxSessions: MAX_SESSIONS,
-      },
+      sessions: sessions.map((s) => ({
+        _id: s._id,
+        userAgent: s.userAgent,
+        ipAddress: s.ipAddress,
+        lastActiveAt: s.lastActiveAt,
+        createdAt: s.createdAt,
+        isCurrent: s._id.toString() === req.sessionId?.toString(),
+      })),
+      count: sessions.length,
+      maxSessions: MAX_SESSIONS,
     });
   } catch (err) {
     next(err);

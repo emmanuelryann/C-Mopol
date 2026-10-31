@@ -122,8 +122,8 @@ When ready to switch from dummy/mock mode to live Paystack processing:
 1. **Environment Variables Configuration:**
    Add live (or test) credentials to your production `.env` file:
    ```env
-   PAYSTACK_SECRET_KEY=sk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   PAYSTACK_PUBLIC_KEY=pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   PAYSTACK_SECRET_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   PAYSTACK_PUBLIC_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxx
    PAYSTACK_BASE_URL=https://api.paystack.co
    PAYMENT_CURRENCY=GHS
    MOCK_PAYMENT=false

@@ -89,9 +89,9 @@ npm run dev
   ```
 - **Expected Status:** `201 Created`
 - **Response Verification:**
-  - Returns user object without `password` or `refreshToken`.
-  - Sets HTTP-Only cookie `refreshToken`.
-  - `role` must be `'customer'` (customers cannot self-assign `'admin'`).
+  - Returns user object without `password` or `refreshToken`.✅
+  - Sets HTTP-Only cookie `refreshToken`.✅
+  - `role` must be `'customer'` (customers cannot self-assign `'admin'`).✅
 - **Edge Cases:**
   - Send existing email -> `409 Conflict` (*"User already exists with this email"*).✅
   - Send invalid email format (e.g. `"not-an-email"`) -> `400 Bad Request` (*"\"email\" must be a valid email"*).✅
@@ -111,8 +111,8 @@ npm run dev
     "password": "Password123!"
   }
   ```
-- **Expected Status:** `200 OK`
-- **Response:** `{ success: true, data: { user, accessToken } }`
+- **Expected Status:** `200 OK`✅
+- **Response:** `{ success: true, data: { user, accessToken } }`✅
 - **Edge Cases:**
   - Invalid password -> `401 Unauthorized` ("Invalid email or password.").✅
   - Invalid email format -> `400 Bad Request` (*"\"email\" must be a valid email"*).✅
@@ -123,21 +123,21 @@ npm run dev
 ### 4. Logout
 - **Endpoint:** `POST /api/v1/auth/logout`
 - **Auth:** Customer or Admin (Auth cookie required)
-- **Expected Status:** `200 OK`
+- **Expected Status:** `200 OK`✅
 - **Response Verification:**
-  - Response body: `{ "success": true, "message": "Logged out successfully." }`
-  - Clears `accessToken` and `refreshToken` HTTP-Only cookies.
-  - Deletes the active device session from the database.
-  - Subsequent calls to protected endpoints (e.g. `GET /api/v1/auth/me`) immediately return `401 Unauthorized`.
+  - Response body: `{ "success": true, "message": "Logged out successfully." }`✅
+  - Clears `accessToken` and `refreshToken` HTTP-Only cookies.✅
+  - Deletes the active device session from the database.✅
+  - Subsequent calls to protected endpoints (e.g. `GET /api/v1/auth/me`) immediately return `401 Unauthorized`.✅
 - **Edge Cases:**
-  - Unauthenticated request (missing `accessToken` cookie) -> `401 Unauthorized` (*"Not authenticated. Please log in."*).
-  - Calling with expired or invalid token -> `401 Unauthorized`.
+  - Unauthenticated request (missing `accessToken` cookie) -> `401 Unauthorized` (*"Not authenticated. Please log in."*).✅
+  - Calling with expired or invalid token -> `401 Unauthorized`.✅
 
 ### 5. Current User Details (`/auth/me`)
 - **Endpoint:** `GET /api/v1/auth/me`
 - **Auth:** Customer or Admin (Auth cookie required)
-- **Expected Status:** `200 OK`
-- **Response Verification:**
+- **Expected Status:** `200 OK`✅
+- **Response Verification:**✅
   - Returns authenticated user details:
     ```json
     {
@@ -160,9 +160,9 @@ npm run dev
     ```
   - Sensitive fields (`password`, `refreshToken`, `passwordResetToken`) are strictly excluded.
 - **Edge Cases:**
-  - Missing `accessToken` cookie -> `401 Unauthorized` (*"Not authenticated. Please log in."*).
-  - Invalid or malformed token -> `401 Unauthorized` (*"Invalid token."*).
-  - Expired access token -> `401 Unauthorized` (*"Access token expired. Please refresh."*).
+  - Missing `accessToken` cookie -> `401 Unauthorized` (*"Not authenticated. Please log in."*).✅
+  - Invalid or malformed token -> `401 Unauthorized` (*"Invalid token."*).✅
+  - Expired access token -> `401 Unauthorized` (*"Access token expired. Please refresh."*).✅
   - Suspended or deleted account -> `403 Forbidden` (*"Your account has been suspended or deleted."*).
 
 ### 6. Refresh Access Token
@@ -176,7 +176,7 @@ npm run dev
 - **Edge Cases:**
   - Missing `refreshToken` cookie -> `401 Unauthorized` (*"No refresh token provided."*).✅
   - Invalid or expired `refreshToken` cookie -> `401 Unauthorized` (*"Invalid or expired refresh token. Please log in again."*).✅
-  - Replay attack / reusing old rotated token -> `401 Unauthorized` (*"Invalid refresh token. Please log in again."*).
+  - Replay attack / reusing old rotated token -> `401 Unauthorized` (*"Invalid refresh token. Please log in again."*).✅
   - Suspended/deleted account -> `403 Forbidden` (*"Your account has been suspended or deleted."*).
 
 ### 7. Change Password
