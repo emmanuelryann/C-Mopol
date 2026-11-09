@@ -168,11 +168,11 @@ npm run dev
 ### 6. Refresh Access Token
 - **Endpoint:** `POST /api/v1/auth/refresh`
 - **Auth:** None (Cookie based)
-- **Expected Status:** `200 OK`
+- **Expected Status:** `200 OK`✅
 - **Verification:**
-  - Response body: `{ "success": true, "message": "Tokens refreshed successfully." }`
-  - Sets brand-new `accessToken` and `refreshToken` cookies (Token Rotation).
-  - Rotates `refreshTokenHash` in the active database session.
+  - Response body: `{ "success": true, "message": "Tokens refreshed successfully." }`✅
+  - Sets brand-new `accessToken` and `refreshToken` cookies (Token Rotation).✅
+  - Rotates `refreshTokenHash` in the active database session.✅
 - **Edge Cases:**
   - Missing `refreshToken` cookie -> `401 Unauthorized` (*"No refresh token provided."*).✅
   - Invalid or expired `refreshToken` cookie -> `401 Unauthorized` (*"Invalid or expired refresh token. Please log in again."*).✅
@@ -189,18 +189,18 @@ npm run dev
     "newPassword": "NewPassword123!"
   }
   ```
-- **Expected Status:** `200 OK`
+- **Expected Status:** `200 OK`✅
 - **Response Verification:**
-  - Response: `{ "success": true, "message": "Password changed successfully. Please log in again." }`
-  - Password updated in database (bcrypt hashed).
-  - Clears auth cookies and revokes **all** active sessions across all devices (`Session.deleteMany({ user: req.user._id })`).
-  - The user must log in again with the new password.
+  - Response: `{ "success": true, "message": "Password changed successfully. Please log in again." }`✅
+  - Password updated in database (bcrypt hashed).✅
+  - Clears auth cookies and revokes **all** active sessions across all devices (`Session.deleteMany({ user: req.user._id })`).✅
+  - The user must log in again with the new password.✅
 - **Edge Cases:**
-  - Missing `currentPassword` or `newPassword` -> `400 Bad Request`.
-  - `newPassword` under 8 chars -> `400 Bad Request` (*"\"newPassword\" length must be at least 8 characters long"*).
-  - Incorrect `currentPassword` -> `400 Bad Request` (*"Current password is incorrect."*).
-  - `newPassword` same as `currentPassword` -> `400 Bad Request` (*"New password cannot be the same as current password."*).
-  - Unauthenticated request -> `401 Unauthorized` (*"Not authenticated. Please log in."*).
+  - Missing `currentPassword` or `newPassword` -> `400 Bad Request`.✅
+  - `newPassword` under 8 chars -> `400 Bad Request` (*length must be at least 8 characters long"*).✅
+  - Incorrect `currentPassword` -> `400 Bad Request` (*"Current password is incorrect."*).✅
+  - `newPassword` same as `currentPassword` -> `400 Bad Request` (*"New password cannot be the same as current password."*).✅
+  - Unauthenticated request -> `401 Unauthorized` (*"Not authenticated. Please log in."*).✅
 
 ### 8. Forgot Password
 - **Endpoint:** `POST /api/v1/auth/forgot-password`
@@ -211,29 +211,29 @@ npm run dev
     "email": "customer@example.com"
   }
   ```
-- **Expected Status:** `200 OK`
+- **Expected Status:** `200 OK`✅
 - **Response Verification:**
-  - Response body:
+  - Response body:✅
     ```json
     {
       "success": true,
       "message": "If an account with that email exists, a password reset link has been sent."
     }
     ```
-  - In development console: Server logs `🔑 [DEV ONLY] Password reset token for customer@example.com: <RESET_TOKEN>`.
-  - In MongoDB: Saves SHA-256 hash in `user.passwordResetToken` and sets `passwordResetExpires` to 10 minutes from now.
-  - Returns generic `200 OK` message even if email does not exist (anti-enumeration security safeguard).
+  - In development console: Server logs `🔑 [DEV ONLY] Password reset token for customer@example.com: <RESET_TOKEN>`.✅
+  - In MongoDB: Saves SHA-256 hash in `user.passwordResetToken` and sets `passwordResetExpires` to 10 minutes from now.✅
+  - Returns generic `200 OK` message even if email does not exist (anti-enumeration security safeguard).✅
 - **Edge Cases:**
-  - Missing `email` field -> `400 Bad Request` (*"\"email\" is required"*).
-  - Invalid email format (e.g. `"not-an-email"`) -> `400 Bad Request` (*"\"email\" must be a valid email"*).
-  - Non-existent user email -> Returns `200 OK` generic message; no token generated or stored in database.
+  - Missing `email` field -> `400 Bad Request` (*email is required"*).✅
+  - Invalid email format (e.g. `"not-an-email"`) -> `400 Bad Request` (*email must be a valid email"*).✅
+  - Non-existent user email -> Returns `200 OK` generic message; no token generated or stored in database.✅
 
 ### 9. Session Management & Multi-Device Control
 - **Database Model:** `Session` collection (`user`, `refreshTokenHash`, `deviceId`, `userAgent`, `ipAddress`, `lastActiveAt`, `expiresAt`).
 - **Endpoint:** `GET /api/v1/auth/sessions`
   - **Auth:** Customer or Admin
-  - **Expected Status:** `200 OK`
-  - **Response:** Returns list of active sessions with `userAgent`, `ipAddress`, `lastActiveAt`, and `isCurrent: true/false`.
+  - **Expected Status:** `200 OK`✅
+  - **Response:** Returns list of active sessions with `userAgent`, `ipAddress`, `lastActiveAt`, and `isCurrent: true/false`.✅
 - **Endpoint:** `DELETE /api/v1/auth/sessions/:sessionId`
   - **Auth:** Customer or Admin (session owner)
   - **Expected Status:** `200 OK`
@@ -567,7 +567,61 @@ npm run dev
   - Invalid order ObjectId format in URL param -> `400 Bad Request` (*"Invalid order ID."*).
   - Non-existent order ID -> `404 Not Found` (*"Order not found."*).
 
-### 5. Password Reset (Recovery Flow)
+### 5. Admin Session Management
+
+#### A. View User Sessions
+- **Endpoint:** `GET /api/v1/admin/users/:userId/sessions`
+- **Auth:** Admin
+- **Expected Status:** `200 OK`
+- **Verification:**
+  - Returns all active sessions for the specified user, each with `userAgent`, `ipAddress`, `deviceId`, `lastActiveAt`, `createdAt`, and `expiresAt`.
+  - Returns `count` of active sessions and the user's basic info (`firstName`, `lastName`, `email`).
+  - Useful for checking suspicious foreign logins: compare IP addresses and user agents against known customer locations.
+- **Edge Cases:**
+  - Invalid user ObjectId format -> `400 Bad Request` (*"Invalid user ID."*).
+  - Non-existent user ID -> `404 Not Found` (*"User not found."*).
+  - User with no active sessions -> `200 OK` with empty `sessions` array and `count: 0`.
+
+#### B. Force-Logout User from All Devices
+- **Endpoint:** `DELETE /api/v1/admin/users/:userId/sessions`
+- **Auth:** Admin
+- **Expected Status:** `200 OK`
+- **Verification:**
+  - All sessions for that user are deleted from the database. Response includes `deletedCount`.
+  - The user's account status remains `active` (not suspended).
+  - On the user's next authenticated request -> `401 Unauthorized` (*"Session has been revoked. Please log in again."*).
+  - The user can immediately log in again to create a new session.
+- **Edge Cases:**
+  - Invalid user ObjectId format -> `400 Bad Request` (*"Invalid user ID."*).
+  - Non-existent user ID -> `404 Not Found` (*"User not found."*).
+  - User with no active sessions -> `200 OK` with `deletedCount: 0` (idempotent).
+
+#### C. Sitewide Session Statistics
+- **Endpoint:** `GET /api/v1/admin/sessions/stats`
+- **Auth:** Admin
+- **Expected Status:** `200 OK`
+- **Response:**
+  ```json
+  {
+    "success": true,
+    "message": "Session statistics retrieved.",
+    "data": {
+      "totalActiveSessions": 47,
+      "uniqueLoggedInUsers": 31,
+      "deviceBreakdown": {
+        "desktop": 28,
+        "mobile": 17,
+        "other": 2
+      }
+    }
+  }
+  ```
+- **Verification:**
+  - `totalActiveSessions`: Total session documents in the `sessions` collection.
+  - `uniqueLoggedInUsers`: Distinct user IDs across all sessions (a user with 2 sessions counts as 1 unique user).
+  - `deviceBreakdown`: Categorizes sessions by parsing User-Agent into `desktop` (Macintosh/Windows/Linux/CrOS), `mobile` (Mobile/Android/iPhone/iPad), or `other`.
+
+### 6. Password Reset (Recovery Flow)
 - **Endpoint:** `POST /api/v1/auth/reset-password/:token`
 - **Auth:** Public (Token based)
 - **URL Parameter:** `:token` (The raw 32-byte hex reset token generated during `POST /api/v1/auth/forgot-password` and logged to the developer console).
@@ -751,6 +805,9 @@ console.log('\nHeader [x-paystack-signature]:\n', hash, '\n');
 | **Orders** | Order status state machine blocks invalid moves | ✅ | [ ] |
 | **Admin** | Dashboard revenue only sums `paymentStatus: 'completed'` | ✅ | [ ] |
 | **Admin** | User search regex special characters safely escaped | ✅ | [ ] |
+| **Admin** | Admin can view all sessions for any user | ✅ | [ ] |
+| **Admin** | Admin can force-logout a user without suspending | ✅ | [ ] |
+| **Admin** | Sitewide active session stats with device breakdown | ✅ | [ ] |
 | **Payments** | Amount computed server-side from Order total | ✅ | [ ] |
 | **Payments** | Duplicate payment session race returns `409 Conflict` | ✅ | [ ] |
 | **Payments** | Server verification required; client success unaccepted | ✅ | [ ] |

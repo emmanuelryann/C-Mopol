@@ -299,6 +299,141 @@ router.patch('/users/:id', validate(adminUpdateUser), async (req, res, next) => 
 });
 
 // ─────────────────────────────────────────────────────────────────
+//  SESSION MANAGEMENT
+// ─────────────────────────────────────────────────────────────────
+
+// View all active sessions for a specific user
+router.get('/users/:userId/sessions', async (req, res, next) => {
+  try {
+    const userId = req.params.userId?.toLowerCase();
+    if (!mongoose.isValidObjectId(userId)) {
+      const error = new Error('Invalid user ID.');
+      error.statusCode = 400;
+      return next(error);
+    }
+
+    const user = await User.findById(userId).select('firstName lastName email');
+    if (!user) {
+      const error = new Error('User not found.');
+      error.statusCode = 404;
+      return next(error);
+    }
+
+    const sessions = await Session.find({ user: user._id })
+      .select('userAgent ipAddress deviceId lastActiveAt createdAt expiresAt')
+      .sort({ lastActiveAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      message: `Active sessions for ${user.firstName} ${user.lastName}.`,
+      data: {
+        user: {
+          _id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+        },
+        sessions,
+        count: sessions.length,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Force-logout a specific user from all devices
+router.delete('/users/:userId/sessions', async (req, res, next) => {
+  try {
+    const userId = req.params.userId?.toLowerCase();
+    if (!mongoose.isValidObjectId(userId)) {
+      const error = new Error('Invalid user ID.');
+      error.statusCode = 400;
+      return next(error);
+    }
+
+    const user = await User.findById(userId).select('firstName lastName email');
+    if (!user) {
+      const error = new Error('User not found.');
+      error.statusCode = 404;
+      return next(error);
+    }
+
+    const result = await Session.deleteMany({ user: user._id });
+
+    res.status(200).json({
+      success: true,
+      message: `All sessions revoked for ${user.firstName} ${user.lastName}. ${result.deletedCount} session(s) terminated.`,
+      data: {
+        deletedCount: result.deletedCount,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Sitewide active session statistics
+router.get('/sessions/stats', async (req, res, next) => {
+  try {
+    const [totalSessions, uniqueUsers, byDevice] = await Promise.all([
+      Session.countDocuments(),
+      Session.distinct('user').then((ids) => ids.length),
+      Session.aggregate([
+        {
+          $addFields: {
+            deviceType: {
+              $switch: {
+                branches: [
+                  {
+                    case: {
+                      $regexMatch: {
+                        input: '$userAgent',
+                        regex: /Mobile|Android|iPhone|iPad/i,
+                      },
+                    },
+                    then: 'mobile',
+                  },
+                  {
+                    case: {
+                      $regexMatch: {
+                        input: '$userAgent',
+                        regex: /Macintosh|Windows|Linux|CrOS/i,
+                      },
+                    },
+                    then: 'desktop',
+                  },
+                ],
+                default: 'other',
+              },
+            },
+          },
+        },
+        { $group: { _id: '$deviceType', count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    // Convert aggregation array to object { desktop: 5, mobile: 3, other: 1 }
+    const deviceBreakdown = {};
+    byDevice.forEach((d) => {
+      deviceBreakdown[d._id] = d.count;
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Session statistics retrieved.',
+      data: {
+        totalActiveSessions: totalSessions,
+        uniqueLoggedInUsers: uniqueUsers,
+        deviceBreakdown,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────
 //  INVENTORY MONITORING
 // ─────────────────────────────────────────────────────────────────
 
