@@ -8,7 +8,14 @@ import { Overlay } from './Overlay';
 export const Navbar = () => {
   const [isSideNavOpen, setIsSideNavOpen] = useState(false);
   const { user, isAuthenticated, logout } = useAuth();
-  const location = useLocation();
+
+  let location = {};
+  try {
+    location = useLocation();
+  } catch {
+    location = { pathname: typeof window !== 'undefined' ? window.location.pathname : '/' };
+  }
+  const currentPath = location?.pathname || '/';
 
   const toggleSideNav = () => {
     setIsSideNavOpen((prev) => !prev);
@@ -32,31 +39,31 @@ export const Navbar = () => {
           <nav className="desktop-navbar-nav" aria-label="Main Navigation">
             <Link
               to="/login"
-              className={`nav-menu-item ${location.pathname === '/login' || location.pathname === '/' ? 'active' : ''}`}
+              className={`nav-menu-item ${currentPath === '/login' || currentPath === '/' ? 'active' : ''}`}
             >
               Sign In
             </Link>
             <Link
               to="/signup"
-              className={`nav-menu-item ${location.pathname === '/signup' ? 'active' : ''}`}
+              className={`nav-menu-item ${currentPath === '/signup' ? 'active' : ''}`}
             >
               Sign Up
             </Link>
             <Link
               to="/verify-email"
-              className={`nav-menu-item ${location.pathname === '/verify-email' ? 'active' : ''}`}
+              className={`nav-menu-item ${currentPath === '/verify-email' ? 'active' : ''}`}
             >
               Verify Email
             </Link>
             <Link
               to="/forgot-password"
-              className={`nav-menu-item ${location.pathname === '/forgot-password' ? 'active' : ''}`}
+              className={`nav-menu-item ${currentPath === '/forgot-password' ? 'active' : ''}`}
             >
               Forgot Password
             </Link>
             <Link
               to="/security"
-              className={`nav-menu-item ${location.pathname === '/security' ? 'active' : ''}`}
+              className={`nav-menu-item ${currentPath === '/security' ? 'active' : ''}`}
             >
               Security
             </Link>

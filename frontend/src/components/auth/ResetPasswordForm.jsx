@@ -6,9 +6,14 @@ import { InputField } from '../common/InputField';
 import { Button } from '../common/Button';
 import { AlertNotice } from '../common/AlertNotice';
 
-export const ResetPasswordForm = () => {
-  const params = useParams();
-  const urlToken = params?.token || '';
+export const ResetPasswordForm = ({ token: propToken = '' }) => {
+  let params = {};
+  try {
+    params = useParams() || {};
+  } catch {
+    params = {};
+  }
+  const urlToken = propToken || params?.token || '';
 
   const [formData, setFormData] = useState({
     token: urlToken,

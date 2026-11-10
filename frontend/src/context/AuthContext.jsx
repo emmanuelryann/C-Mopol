@@ -6,16 +6,26 @@ const AuthContext = createContext(null);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [unverifiedEmail, setUnverifiedEmail] = useState(
-    () => localStorage.getItem('c_mopol_unverified_email') || 'Mutiara@gmail.com'
-  );
+  const [unverifiedEmail, setUnverifiedEmail] = useState(() => {
+    try {
+      return (typeof window !== 'undefined' && localStorage.getItem('c_mopol_unverified_email')) || 'Mutiara@gmail.com';
+    } catch {
+      return 'Mutiara@gmail.com';
+    }
+  });
 
   const saveUnverifiedEmail = (email) => {
     setUnverifiedEmail(email);
-    if (email) {
-      localStorage.setItem('c_mopol_unverified_email', email);
-    } else {
-      localStorage.removeItem('c_mopol_unverified_email');
+    try {
+      if (typeof window !== 'undefined') {
+        if (email) {
+          localStorage.setItem('c_mopol_unverified_email', email);
+        } else {
+          localStorage.removeItem('c_mopol_unverified_email');
+        }
+      }
+    } catch {
+      // Ignore storage errors
     }
   };
 

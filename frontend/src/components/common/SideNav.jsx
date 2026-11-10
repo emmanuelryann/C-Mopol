@@ -12,7 +12,14 @@ import {
 
 export const SideNav = ({ isOpen, onClose }) => {
   const { user, isAuthenticated, logout } = useAuth();
-  const location = useLocation();
+
+  let location = {};
+  try {
+    location = useLocation();
+  } catch {
+    location = { pathname: typeof window !== 'undefined' ? window.location.pathname : '/' };
+  }
+  const currentPath = location?.pathname || '/';
 
   const handleLinkClick = () => {
     onClose();
@@ -61,7 +68,7 @@ export const SideNav = ({ isOpen, onClose }) => {
 
       <nav className="side-nav-menu">
         {navLinks.map((item) => {
-          const isActive = location.pathname === item.to;
+          const isActive = currentPath === item.to;
           return (
             <Link
               key={item.to}
@@ -79,7 +86,7 @@ export const SideNav = ({ isOpen, onClose }) => {
         {isAuthenticated && (
           <Link
             to="/dashboard"
-            className={`side-nav-link ${location.pathname === '/dashboard' ? 'is-active' : ''}`}
+            className={`side-nav-link ${currentPath === '/dashboard' ? 'is-active' : ''}`}
             onClick={handleLinkClick}
           >
             <span className="side-nav-icon"><UserIcon size="1.125rem" /></span>
