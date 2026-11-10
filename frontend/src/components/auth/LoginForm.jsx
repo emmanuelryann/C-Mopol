@@ -20,7 +20,9 @@ export const LoginForm = () => {
   const loginMutation = useMutation({
     mutationFn: (credentials) => authService.login(credentials),
     onSuccess: (data) => {
-      login(data.user);
+      if (data?.user) {
+        login(data.user);
+      }
       navigate('/dashboard');
     },
   });
@@ -43,8 +45,6 @@ export const LoginForm = () => {
 
     if (!formData.password) {
       errors.password = 'Password is required.';
-    } else if (formData.password.length < 6) {
-      errors.password = 'Password must be at least 6 characters.';
     }
 
     setClientErrors(errors);
@@ -58,6 +58,11 @@ export const LoginForm = () => {
       email: formData.email.trim().toLowerCase(),
       password: formData.password,
     });
+  };
+
+  const handleNavigate = (path) => (e) => {
+    e.preventDefault();
+    navigate(path);
   };
 
   return (
@@ -103,7 +108,11 @@ export const LoginForm = () => {
           required
           autoComplete="current-password"
           rightLabelAction={
-            <Link to="/forgot-password" className="forgot-password-link">
+            <Link
+              to="/forgot-password"
+              className="forgot-password-link"
+              onClick={handleNavigate('/forgot-password')}
+            >
               Forgot Password?
             </Link>
           }
@@ -124,7 +133,11 @@ export const LoginForm = () => {
       {/* Switch to Sign Up */}
       <div className="auth-switch-prompt">
         <span>Don't have account yet? </span>
-        <Link to="/signup" className="auth-switch-link">
+        <Link
+          to="/signup"
+          className="auth-switch-link"
+          onClick={handleNavigate('/signup')}
+        >
           Sign up
         </Link>
       </div>

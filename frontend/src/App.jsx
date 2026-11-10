@@ -1,8 +1,7 @@
 import React from 'react';
-import { Router, LocationProvider } from '@reach/router';
+import { Router } from '@reach/router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './context/AuthContext';
-import { Navbar } from './components/common/Navbar';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 // Authentication Pages
@@ -17,7 +16,6 @@ import { NotFoundPage } from './components/pages/NotFoundPage';
 
 // Import CSS Styles from separate styles directory
 import './styles/global.css';
-import './styles/navbar.css';
 import './styles/auth-layout.css';
 import './styles/auth-forms.css';
 import './styles/auth-hero.css';
@@ -38,27 +36,24 @@ export const App = () => {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <LocationProvider>
-            <div className="app-root-shell">
-              <Navbar />
-              <div className="app-main-viewport">
-                <Router className="router-outlet-container">
-                  <LoginPage path="/" />
-                  <LoginPage path="/login" />
-                  <RegisterPage path="/signup" />
-                  <RegisterPage path="/register" />
-                  <VerifyEmailPage path="/verify-email" />
-                  <ForgotPasswordPage path="/forgot-password" />
-                  <ResetPasswordPage path="/reset-password" />
-                  <ResetPasswordPage path="/reset-password/:token" />
-                  <SecurityPage path="/security" />
-                  <SecurityPage path="/sessions" />
-                  <DashboardPage path="/dashboard" />
-                  <NotFoundPage default />
-                </Router>
-              </div>
+          <div className="app-root-shell">
+            <div className="app-main-viewport">
+              <Router className="router-outlet-container">
+                <LoginPage path="/" />
+                <LoginPage path="/login" />
+                <RegisterPage path="/signup" />
+                <RegisterPage path="/register" />
+                <VerifyEmailPage path="/verify-email" />
+                <ForgotPasswordPage path="/forgot-password" />
+                <ResetPasswordPage path="/reset-password" />
+                <ResetPasswordPage path="/reset-password/:token" />
+                <SecurityPage path="/security" />
+                <SecurityPage path="/sessions" />
+                <DashboardPage path="/dashboard" />
+                <NotFoundPage default />
+              </Router>
             </div>
-          </LocationProvider>
+          </div>
         </AuthProvider>
       </QueryClientProvider>
     </ErrorBoundary>

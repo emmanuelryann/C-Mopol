@@ -74,6 +74,11 @@ export const RegisterForm = () => {
     });
   };
 
+  const handleNavigate = (path) => (e) => {
+    e.preventDefault();
+    navigate(path);
+  };
+
   return (
     <div className="auth-form-content">
       <SocialAuthButtons />
@@ -166,7 +171,11 @@ export const RegisterForm = () => {
 
       <div className="auth-switch-prompt">
         <span>Already have an account? </span>
-        <Link to="/login" className="auth-switch-link">
+        <Link
+          to="/login"
+          className="auth-switch-link"
+          onClick={handleNavigate('/login')}
+        >
           Log in
         </Link>
       </div>

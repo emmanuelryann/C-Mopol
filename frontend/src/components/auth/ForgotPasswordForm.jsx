@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from '@reach/router';
+import { Link, navigate } from '@reach/router';
 import { useMutation } from '@tanstack/react-query';
 import authService from '../../services/authService';
 import { InputField } from '../common/InputField';
@@ -32,6 +32,11 @@ export const ForgotPasswordForm = () => {
     forgotMutation.mutate(email.trim().toLowerCase());
   };
 
+  const handleNavigate = (path) => (e) => {
+    e.preventDefault();
+    navigate(path);
+  };
+
   return (
     <div className="auth-form-content">
       {forgotMutation.isError && (
@@ -48,7 +53,11 @@ export const ForgotPasswordForm = () => {
             message={`If an account with ${email} exists, a password reset link has been sent. Check your inbox and spam folder.`}
           />
           <div className="auth-switch-prompt" style={{ marginTop: 'clamp(1.5rem, 2.5vw, 2rem)' }}>
-            <Link to="/login" className="auth-switch-link">
+            <Link
+              to="/login"
+              className="auth-switch-link"
+              onClick={handleNavigate('/login')}
+            >
               Return to Log in
             </Link>
           </div>
@@ -84,7 +93,11 @@ export const ForgotPasswordForm = () => {
 
           <div className="auth-switch-prompt">
             <span>Remember your password? </span>
-            <Link to="/login" className="auth-switch-link">
+            <Link
+              to="/login"
+              className="auth-switch-link"
+              onClick={handleNavigate('/login')}
+            >
               Log in
             </Link>
           </div>

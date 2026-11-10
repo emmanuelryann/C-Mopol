@@ -48,11 +48,14 @@ export async function request(endpoint, options = {}) {
   try {
     response = await fetch(url, config);
   } catch (networkError) {
-    throw new ApiError('Network error. Please check your internet connection or backend server.', 0);
+    throw new ApiError(
+      'Unable to connect to the backend server. Please verify the backend is running on port 5001.',
+      0
+    );
   }
 
   // Handle 401 Unauthorized by attempting to refresh token
-  if (response.status === 401 && !endpoint.includes('/refresh') && !endpoint.includes('/login')) {
+  if (response.status === 401 && !endpoint.includes('/refresh') && !endpoint.includes('/login') && !endpoint.includes('/register')) {
     if (isRefreshing) {
       return new Promise((resolve, reject) => {
         refreshQueue.push({ resolve, reject });
@@ -90,14 +93,18 @@ export async function request(endpoint, options = {}) {
       data = null;
     }
   } else {
-    data = await response.text();
+    try {
+      data = await response.text();
+    } catch {
+      data = null;
+    }
   }
 
   if (!response.ok) {
     const errorMessage =
       (data && typeof data === 'object' && (data.message || data.error)) ||
-      response.statusText ||
-      'An unexpected error occurred';
+      (typeof data === 'string' && data) ||
+      `Request failed with status ${response.status}`;
     throw new ApiError(errorMessage, response.status, data);
   }
 

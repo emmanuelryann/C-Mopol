@@ -56,6 +56,11 @@ export const VerifyEmailForm = () => {
     verifyMutation.mutate({ code: code.trim(), email: unverifiedEmail });
   };
 
+  const handleNavigate = (path) => (e) => {
+    e.preventDefault();
+    navigate(path);
+  };
+
   return (
     <div className="auth-form-content verify-email-content">
       {statusMessage.text && (
@@ -106,7 +111,11 @@ export const VerifyEmailForm = () => {
           {resendMutation.isPending ? 'Resending code...' : 'Resend verification Email'}
         </button>
 
-        <Link to="/login" className="verify-text-action-link">
+        <Link
+          to="/login"
+          className="verify-text-action-link"
+          onClick={handleNavigate('/login')}
+        >
           Use another account
         </Link>
       </div>

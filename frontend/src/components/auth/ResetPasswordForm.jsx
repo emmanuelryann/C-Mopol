@@ -69,6 +69,11 @@ export const ResetPasswordForm = ({ token: propToken = '' }) => {
     });
   };
 
+  const handleNavigate = (path) => (e) => {
+    e.preventDefault();
+    navigate(path);
+  };
+
   return (
     <div className="auth-form-content">
       {successMessage && <AlertNotice type="success" message={successMessage} />}
@@ -133,7 +138,11 @@ export const ResetPasswordForm = ({ token: propToken = '' }) => {
         </div>
 
         <div className="auth-switch-prompt">
-          <Link to="/login" className="auth-switch-link">
+          <Link
+            to="/login"
+            className="auth-switch-link"
+            onClick={handleNavigate('/login')}
+          >
             Back to Log in
           </Link>
         </div>
