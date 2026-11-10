@@ -138,7 +138,9 @@ router.post('/register', validate(createUser), async (req, res, next) => {
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      const error = new Error('A user with this email already exists.');
+      const error = new Error(
+        'Unable to complete registration. If you already have an account, please log in.',
+      );
       error.statusCode = 409;
       return next(error);
     }

@@ -2,8 +2,8 @@ import React from 'react';
 import { GoogleIcon, AppleIcon } from '../common/Icons';
 
 export const SocialAuthButtons = ({ onGoogleClick, onAppleClick }) => {
-  const handleSocialNotImplemented = (provider) => {
-    alert(`${provider} sign-in integration is connected to the backend auth pipeline.`);
+  const handleNoop = (e) => {
+    e.preventDefault();
   };
 
   return (
@@ -11,7 +11,7 @@ export const SocialAuthButtons = ({ onGoogleClick, onAppleClick }) => {
       <button
         type="button"
         className="social-btn social-google-btn"
-        onClick={onGoogleClick || (() => handleSocialNotImplemented('Google'))}
+        onClick={onGoogleClick || handleNoop}
       >
         <span className="social-btn-icon"><GoogleIcon size="1.25rem" /></span>
         <span className="social-btn-label">Continue with Google</span>
@@ -20,7 +20,7 @@ export const SocialAuthButtons = ({ onGoogleClick, onAppleClick }) => {
       <button
         type="button"
         className="social-btn social-apple-btn"
-        onClick={onAppleClick || (() => handleSocialNotImplemented('Apple'))}
+        onClick={onAppleClick || handleNoop}
       >
         <span className="social-btn-icon"><AppleIcon size="1.25rem" /></span>
         <span className="social-btn-label">Continue with Apple</span>

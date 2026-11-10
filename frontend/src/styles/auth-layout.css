@@ -46,6 +46,32 @@
   margin: 0 auto;
 }
 
+/* Top Back Navigation */
+.auth-back-nav-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  margin-bottom: clamp(0.5rem, 1vh, 0.75rem);
+}
+
+.auth-back-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: clamp(0.25rem, 0.5vh, 0.375rem) clamp(0.5rem, 1vw, 0.625rem);
+  border-radius: 0.5rem;
+  font-size: clamp(0.75rem, 1vw, 0.8125rem);
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: transparent;
+  transition: all var(--transition-fast);
+}
+
+.auth-back-nav-btn:hover {
+  color: var(--color-text-main);
+  background-color: #F3F4F6;
+}
+
 /* Centered Sunburst Logo */
 .auth-logo-center-box {
   display: flex;

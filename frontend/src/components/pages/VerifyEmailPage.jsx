@@ -19,8 +19,9 @@ export const VerifyEmailPage = () => {
         </>
       }
       heroSlideIndex={1}
+      backTo="/signup"
     >
-      <VerifyEmailForm />
+      <VerifyEmailForm showUseAnotherAccount={true} />
     </AuthLayout>
   );
 };

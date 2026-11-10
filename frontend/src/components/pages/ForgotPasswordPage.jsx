@@ -8,6 +8,7 @@ export const ForgotPasswordPage = () => {
       title="Forgot Password"
       subtitle="Enter your email to receive recovery instructions."
       heroSlideIndex={3}
+      backTo="/login"
     >
       <ForgotPasswordForm />
     </AuthLayout>

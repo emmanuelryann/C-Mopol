@@ -17,6 +17,19 @@ export const LoginForm = () => {
   });
   const [clientErrors, setClientErrors] = useState({});
 
+  const [successNotice, setSuccessNotice] = useState(() => {
+    try {
+      const notice = sessionStorage.getItem('auth_notice');
+      if (notice) {
+        sessionStorage.removeItem('auth_notice');
+        return notice;
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  });
+
   const loginMutation = useMutation({
     mutationFn: (credentials) => authService.login(credentials),
     onSuccess: (data) => {
@@ -72,6 +85,15 @@ export const LoginForm = () => {
 
       {/* Divider */}
       <AuthDivider text="OR" />
+
+      {/* Success notice (e.g. after password change) */}
+      {successNotice && (
+        <AlertNotice
+          type="success"
+          message={successNotice}
+          onClose={() => setSuccessNotice('')}
+        />
+      )}
 
       {/* Backend API Error Banner */}
       {loginMutation.isError && (

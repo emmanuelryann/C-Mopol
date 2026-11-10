@@ -10,12 +10,14 @@ import { SocialAuthButtons } from './SocialAuthButtons';
 import { AuthDivider } from './AuthDivider';
 
 export const RegisterForm = () => {
-  const { login, setUnverifiedEmail } = useAuth();
+  const { login, setUnverifiedEmail, registrationFormData, saveRegistrationFormData } = useAuth();
+
+  // Populate from previous registration data if user returned from "use another account"
   const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
+    firstName: registrationFormData?.firstName || '',
+    lastName: registrationFormData?.lastName || '',
+    email: registrationFormData?.email || '',
+    phone: registrationFormData?.phone || '',
     password: '',
   });
   const [clientErrors, setClientErrors] = useState({});
@@ -26,6 +28,13 @@ export const RegisterForm = () => {
       if (data?.data?.user) {
         login(data.data.user);
       }
+      // Save form fields so they are populated if the user comes back to use another account
+      saveRegistrationFormData({
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
+        email: formData.email.trim().toLowerCase(),
+        phone: formData.phone.trim(),
+      });
       setUnverifiedEmail(formData.email.trim());
       navigate('/verify-email');
     },
@@ -79,6 +88,22 @@ export const RegisterForm = () => {
     navigate(path);
   };
 
+  // Securely normalize duplicate email / conflict messages to avoid account enumeration
+  const getSecureErrorMessage = () => {
+    if (!registerMutation.error) return '';
+    const err = registerMutation.error;
+    const msg = (err.message || '').toLowerCase();
+    if (
+      err.status === 409 ||
+      msg.includes('already exist') ||
+      msg.includes('duplicate') ||
+      msg.includes('user with this email')
+    ) {
+      return 'Unable to complete registration. If you already have an account, please log in.';
+    }
+    return err.message || 'Registration failed. Please check inputs.';
+  };
+
   return (
     <div className="auth-form-content">
       <SocialAuthButtons />
@@ -88,7 +113,7 @@ export const RegisterForm = () => {
       {registerMutation.isError && (
         <AlertNotice
           type="error"
-          message={registerMutation.error?.message || 'Registration failed. Please check inputs.'}
+          message={getSecureErrorMessage()}
         />
       )}
 

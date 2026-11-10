@@ -8,6 +8,7 @@ import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { LoginPage } from './components/pages/LoginPage';
 import { RegisterPage } from './components/pages/RegisterPage';
 import { VerifyEmailPage } from './components/pages/VerifyEmailPage';
+import { ProfileVerifyEmailPage } from './components/pages/ProfileVerifyEmailPage';
 import { ForgotPasswordPage } from './components/pages/ForgotPasswordPage';
 import { ResetPasswordPage } from './components/pages/ResetPasswordPage';
 import { SecurityPage } from './components/pages/SecurityPage';
@@ -44,6 +45,7 @@ export const App = () => {
                 <RegisterPage path="/signup" />
                 <RegisterPage path="/register" />
                 <VerifyEmailPage path="/verify-email" />
+                <ProfileVerifyEmailPage path="/profile/verify-email" />
                 <ForgotPasswordPage path="/forgot-password" />
                 <ResetPasswordPage path="/reset-password" />
                 <ResetPasswordPage path="/reset-password/:token" />

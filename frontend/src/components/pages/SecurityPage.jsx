@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
+import { navigate } from '@reach/router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../context/AuthContext';
 import authService from '../../services/authService';
 import { InputField } from '../common/InputField';
 import { Button } from '../common/Button';
 import { AlertNotice } from '../common/AlertNotice';
-import { ShieldCheckIcon, MonitorIcon } from '../common/Icons';
+import { ShieldCheckIcon, MonitorIcon, ArrowLeftIcon } from '../common/Icons';
 
 export const SecurityPage = () => {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, logout } = useAuth();
   const queryClient = useQueryClient();
 
   const [passwordData, setPasswordData] = useState({
@@ -30,15 +31,20 @@ export const SecurityPage = () => {
     enabled: isAuthenticated,
   });
 
-  // Change password mutation
+  // Change password mutation: logs user out immediately upon success
   const changePasswordMutation = useMutation({
     mutationFn: (data) => authService.changePassword(data),
-    onSuccess: (res) => {
-      setPasswordStatus({
-        type: 'success',
-        text: res?.message || 'Password changed successfully! You will need to re-login on next visit.',
-      });
-      setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    onSuccess: async () => {
+      try {
+        sessionStorage.setItem(
+          'auth_notice',
+          'Password changed successfully! You have been logged out. Please log in with your new password.'
+        );
+      } catch {
+        // Ignore session storage errors
+      }
+      await logout();
+      navigate('/login');
     },
     onError: (err) => {
       setPasswordStatus({
@@ -89,6 +95,17 @@ export const SecurityPage = () => {
 
   return (
     <div className="security-page-container">
+      {/* Back button to Dashboard */}
+      <button
+        type="button"
+        onClick={() => navigate('/dashboard')}
+        className="page-back-nav-btn"
+        aria-label="Back to Dashboard"
+      >
+        <ArrowLeftIcon size="1rem" />
+        <span>Back to Dashboard</span>
+      </button>
+
       <div className="security-header-section">
         <h1 className="security-page-title">Account Security &amp; Sessions</h1>
         <p className="security-page-subtitle">
@@ -103,7 +120,9 @@ export const SecurityPage = () => {
             <span className="security-header-icon"><ShieldCheckIcon size="1.25rem" /></span>
             <div>
               <h2 className="security-card-title">Change Password</h2>
-              <p className="security-card-desc">Update your password to keep your account safe.</p>
+              <p className="security-card-desc">
+                Updating your password immediately signs you out across all devices.
+              </p>
             </div>
           </div>
 
@@ -190,7 +209,7 @@ export const SecurityPage = () => {
             <div className="security-sessions-loading">Loading active sessions...</div>
           ) : sessionsError ? (
             <div className="security-sessions-empty">
-              Please <a href="/login">sign in</a> to view active sessions.
+              Please <a href="/login" onClick={(e) => { e.preventDefault(); navigate('/login'); }}>sign in</a> to view active sessions.
             </div>
           ) : sessionsData?.sessions?.length ? (
             <div className="security-sessions-list">

@@ -6,7 +6,7 @@ import authService from '../../services/authService';
 import { Button } from '../common/Button';
 import { AlertNotice } from '../common/AlertNotice';
 
-export const VerifyEmailForm = () => {
+export const VerifyEmailForm = ({ showUseAnotherAccount = true, onVerified = null }) => {
   const { unverifiedEmail, markEmailVerified } = useAuth();
   const [code, setCode] = useState('');
   const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
@@ -20,7 +20,11 @@ export const VerifyEmailForm = () => {
         text: res?.message || 'Email successfully verified! Redirecting to dashboard...',
       });
       setTimeout(() => {
-        navigate('/dashboard');
+        if (onVerified) {
+          onVerified();
+        } else {
+          navigate('/dashboard');
+        }
       }, 1500);
     },
     onError: (err) => {
@@ -100,7 +104,7 @@ export const VerifyEmailForm = () => {
         </div>
       </form>
 
-      {/* Secondary Actions matching Image 2 */}
+      {/* Secondary Actions */}
       <div className="verify-email-actions">
         <button
           type="button"
@@ -111,13 +115,16 @@ export const VerifyEmailForm = () => {
           {resendMutation.isPending ? 'Resending code...' : 'Resend verification Email'}
         </button>
 
-        <Link
-          to="/login"
-          className="verify-text-action-link"
-          onClick={handleNavigate('/login')}
-        >
-          Use another account
-        </Link>
+        {/* Shown during initial registration verification, hidden on profile verification */}
+        {showUseAnotherAccount && (
+          <Link
+            to="/signup"
+            className="verify-text-action-link"
+            onClick={handleNavigate('/signup')}
+          >
+            Use another account
+          </Link>
+        )}
       </div>
     </div>
   );

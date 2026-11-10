@@ -8,6 +8,7 @@ export const ResetPasswordPage = (props) => {
       title="Reset Password"
       subtitle="Enter and confirm your new secure password."
       heroSlideIndex={3}
+      backTo="/login"
     >
       <ResetPasswordForm token={props?.token} />
     </AuthLayout>

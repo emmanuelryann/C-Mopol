@@ -1,15 +1,29 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, navigate } from '@reach/router';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../common/Button';
+import { ConfirmLogoutModal } from '../common/ConfirmLogoutModal';
 import { ShieldCheckIcon, MailIcon, UserIcon } from '../common/Icons';
 
 export const DashboardPage = () => {
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, logout } = useAuth();
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
+  const handleConfirmLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      navigate('/login');
+    } finally {
+      setIsLoggingOut(false);
+      setIsLogoutModalOpen(false);
+    }
+  };
+
+  const handleNavigate = (path) => (e) => {
+    e.preventDefault();
+    navigate(path);
   };
 
   return (
@@ -30,7 +44,7 @@ export const DashboardPage = () => {
             type="button"
             variant="outline"
             fullWidth={false}
-            onClick={handleLogout}
+            onClick={() => setIsLogoutModalOpen(true)}
           >
             Sign Out
           </Button>
@@ -87,8 +101,9 @@ export const DashboardPage = () => {
 
           <div style={{ marginTop: 'clamp(1rem, 2vw, 1.5rem)' }}>
             <Link
-              to="/verify-email"
+              to="/profile/verify-email"
               className="dashboard-action-btn-link"
+              onClick={handleNavigate('/profile/verify-email')}
             >
               {user?.isEmailVerified ? 'View Verification Screen' : 'Verify Email Now'}
             </Link>
@@ -107,12 +122,24 @@ export const DashboardPage = () => {
           </p>
 
           <div style={{ marginTop: 'clamp(1rem, 2vw, 1.5rem)' }}>
-            <Link to="/security" className="dashboard-action-btn-link">
+            <Link
+              to="/security"
+              className="dashboard-action-btn-link"
+              onClick={handleNavigate('/security')}
+            >
               Manage Security &amp; Sessions
             </Link>
           </div>
         </section>
       </div>
+
+      {/* Confirmation Modal for Logout */}
+      <ConfirmLogoutModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={handleConfirmLogout}
+        isLoading={isLoggingOut}
+      />
     </div>
   );
 };
