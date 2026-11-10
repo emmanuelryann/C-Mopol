@@ -236,31 +236,31 @@ npm run dev
   - **Response:** Returns list of active sessions with `userAgent`, `ipAddress`, `lastActiveAt`, and `isCurrent: true/false`.✅
 - **Endpoint:** `DELETE /api/v1/auth/sessions/:sessionId`
   - **Auth:** Customer or Admin (session owner)
-  - **Expected Status:** `200 OK`
-  - **Verification:** Deletes the specified remote session from DB. The revoked device immediately receives `401 Unauthorized` (*"Session has been revoked. Please log in again."*) on its next request.
+  - **Expected Status:** `200 OK`✅
+  - **Verification:** Deletes the specified remote session from DB. The revoked device immediately receives `401 Unauthorized` (*"Session has been revoked. Please log in again."*) on its next request.✅
 - **Session Rules & Multi-Device Enforcement Tests:**
-  1. **Same-Device Single Session Rule:**
+  1. **Same-Device Single Session Rule:**✅
      - Log in on Browser 1 (e.g. Chrome on Mac).
      - Log in on Browser 2 or new tab on the same device (e.g. Firefox on Mac or passing same `x-device-id`).
      - **Verification:** Only **one** session exists for that device in the DB. The old Browser 1 session is superseded and immediately revoked (`401 Unauthorized`).
-  2. **Two Devices Allowed (Max 2 Total Sessions):**
+  2. **Two Devices Allowed (Max 2 Total Sessions):**✅
      - Log in on Device 1 (e.g. Laptop).
      - Log in on Device 2 (e.g. Mobile phone with mobile User-Agent or `x-device-id: phone-1`).
      - **Verification:** Both devices are active simultaneously (`Session.countDocuments` = 2). Both can access authenticated routes.
-  3. **Third Device Blocked (Session Cap Enforced):**
+  3. **Third Device Blocked (Session Cap Enforced):**✅
      - Try logging in on Device 3 (e.g. Work PC with `x-device-id: pc-3`).
      - **Expected Status:** `403 Forbidden` (*"Maximum active sessions reached (2). Please log out from another device first."*).
-  4. **Revocation & Re-Login Slot Recovery:**
+  4. **Revocation & Re-Login Slot Recovery:**✅
      - From Device 1, call `DELETE /api/v1/auth/sessions/:phoneSessionId` to revoke Device 2 (or log out from Device 2).
      - Try logging in on Device 3 again.
      - **Expected Status:** `200 OK` — Device 3 logs in successfully!
   5. **Admin Suspension / Deletion Cascade:**
      - When admin suspends or deletes a user via `PATCH /api/v1/admin/users/:id`, all active sessions for that user are immediately deleted from the database.
 - **Edge Cases:**
-  - `DELETE /sessions/:sessionId`: Invalid session ID format -> `400 Bad Request` (*"Invalid session ID."*).
-  - `DELETE /sessions/:sessionId`: Attempting to revoke own current session -> `400 Bad Request` (*"Cannot revoke your current session. Use the logout endpoint instead."*).
-  - `DELETE /sessions/:sessionId`: Non-existent session ID -> `404 Not Found` (*"Session not found."*).
-  - Accessing with a revoked session token -> `401 Unauthorized` (*"Session has been revoked. Please log in again."*).
+  - `DELETE /sessions/:sessionId`: Invalid session ID format -> `400 Bad Request` (*"Invalid session ID."*).✅
+  - `DELETE /sessions/:sessionId`: Attempting to revoke own current session -> `400 Bad Request` (*"Cannot revoke your current session. Use the logout endpoint instead."*).✅
+  - `DELETE /sessions/:sessionId`: Non-existent session ID -> `404 Not Found` (*"Session not found."*).✅
+  - Accessing with a revoked session token -> `401 Unauthorized` (*"Session has been revoked. Please log in again."*).✅
 
 ---
 

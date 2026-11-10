@@ -1,0 +1,412 @@
+/* ==========================================================================
+   NAVBAR & MOBILE SIDE DRAWER STYLES
+   - Smooth transform hamburger to 'X' icon.
+   - Slide-in side navbar from the right.
+   - Transparent backdrop overlay with scroll-lock coordination.
+   - Strictly NO px units. Clamp for paddings, margins, fonts.
+   - rem for borders, border-radius, gaps, shadows.
+   - Media queries restricted strictly to layout reorganization.
+   ========================================================================== */
+
+.main-site-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(0.75rem);
+  -webkit-backdrop-filter: blur(0.75rem);
+  border-bottom: 0.0625rem solid var(--color-border-subtle);
+  transition: background-color var(--transition-standard);
+}
+
+.navbar-container {
+  width: min(94vw, 76rem);
+  height: clamp(3.75rem, 7vh, 4.75rem);
+  margin: 0 auto;
+  padding: 0 clamp(0.75rem, 2vw, 1.5rem);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+}
+
+/* Brand Link */
+.navbar-brand-link {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-shrink: 0;
+}
+
+.navbar-brand-name {
+  font-size: clamp(1.125rem, 2vw, 1.375rem);
+  font-weight: 700;
+  color: var(--color-text-main);
+  letter-spacing: -0.02rem;
+}
+
+/* Desktop Navigation Menu */
+.desktop-navbar-nav {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.5rem, 1.5vw, 1.5rem);
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+
+.nav-menu-item {
+  font-size: clamp(0.8125rem, 1.1vw, 0.9375rem);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  padding: clamp(0.375rem, 0.8vh, 0.5rem) clamp(0.5rem, 1vw, 0.875rem);
+  border-radius: 0.5rem;
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.nav-menu-item:hover {
+  color: var(--color-text-main);
+  background-color: rgba(17, 24, 39, 0.04);
+}
+
+.nav-menu-item.active {
+  color: var(--color-brand-orange);
+  font-weight: 600;
+}
+
+.navbar-user-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: clamp(0.5rem, 1vw, 1rem);
+}
+
+.navbar-user-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: clamp(0.25rem, 0.5vh, 0.375rem) clamp(0.625rem, 1vw, 0.875rem);
+  background: rgba(226, 109, 36, 0.08);
+  border: 0.0625rem solid rgba(226, 109, 36, 0.2);
+  border-radius: 999rem;
+}
+
+.user-initial {
+  width: clamp(1.5rem, 2vw, 1.75rem);
+  height: clamp(1.5rem, 2vw, 1.75rem);
+  background: var(--color-brand-orange);
+  color: #FFFFFF;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(0.6875rem, 0.9vw, 0.75rem);
+  font-weight: 700;
+}
+
+.user-short-name {
+  font-size: clamp(0.75rem, 1vw, 0.875rem);
+  font-weight: 600;
+  color: var(--color-brand-orange);
+}
+
+.navbar-logout-btn {
+  font-size: clamp(0.75rem, 1vw, 0.875rem);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  padding: clamp(0.375rem, 0.8vh, 0.5rem) clamp(0.625rem, 1vw, 0.875rem);
+  border-radius: 0.5rem;
+  border: 0.0625rem solid var(--color-border-subtle);
+  background: #FFFFFF;
+  transition: all var(--transition-fast);
+}
+
+.navbar-logout-btn:hover {
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
+.navbar-cta-button {
+  font-size: clamp(0.8125rem, 1.1vw, 0.9rem);
+  font-weight: 600;
+  color: #FFFFFF;
+  background: var(--color-primary-dark);
+  padding: clamp(0.5rem, 1vh, 0.625rem) clamp(1rem, 1.5vw, 1.25rem);
+  border-radius: 0.625rem;
+  transition: background-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.navbar-cta-button:hover {
+  background: var(--color-primary-hover);
+}
+
+/* ==========================================================================
+   HAMBURGER BUTTON & SMOOTH 'X' TRANSFORMATION
+   ========================================================================== */
+.hamburger-toggle-btn {
+  display: none; /* hidden on wide desktop; shown on smaller screens via layout media query */
+  position: relative;
+  z-index: 1100; /* stays above drawer & overlay */
+  width: clamp(2.5rem, 5vw, 2.75rem);
+  height: clamp(2.5rem, 5vw, 2.75rem);
+  padding: clamp(0.375rem, 0.8vw, 0.5rem);
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 0.3125rem;
+  border-radius: 0.5rem;
+  background: #FFFFFF;
+  border: 0.0625rem solid var(--color-border-subtle);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.hamburger-toggle-btn:hover {
+  background: #F9FAFB;
+  border-color: var(--color-text-main);
+}
+
+.hamburger-bar {
+  display: block;
+  width: 1.25rem;
+  height: 0.125rem;
+  background-color: var(--color-text-main);
+  border-radius: 0.125rem;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.2s ease,
+              background-color var(--transition-fast);
+  transform-origin: center;
+}
+
+/* Morphing hamburger lines into 'X' when active */
+.hamburger-toggle-btn.is-active .bar-top {
+  transform: translateY(0.4375rem) rotate(45deg);
+}
+
+.hamburger-toggle-btn.is-active .bar-middle {
+  opacity: 0;
+  transform: scaleX(0);
+}
+
+.hamburger-toggle-btn.is-active .bar-bottom {
+  transform: translateY(-0.4375rem) rotate(-45deg);
+}
+
+/* ==========================================================================
+   TRANSPARENT BACKDROP OVERLAY
+   ========================================================================== */
+.mobile-backdrop-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(17, 24, 39, 0.45);
+  backdrop-filter: blur(0.25rem);
+  -webkit-backdrop-filter: blur(0.25rem);
+  z-index: 999;
+  cursor: pointer;
+  animation: overlayFadeIn 0.25s ease-out forwards;
+}
+
+@keyframes overlayFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ==========================================================================
+   MOBILE SIDE NAV DRAWER (SLIDES IN FROM THE RIGHT)
+   ========================================================================== */
+.side-navbar-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: min(85vw, 22rem);
+  background: #FFFFFF;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  box-shadow: var(--shadow-drawer);
+  transform: translateX(100%);
+  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow-y: auto;
+  border-left: 0.0625rem solid var(--color-border-subtle);
+}
+
+.side-navbar-drawer.is-open {
+  transform: translateX(0);
+}
+
+.side-nav-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin-bottom: clamp(1.25rem, 2.5vw, 1.75rem);
+  padding-bottom: clamp(0.75rem, 1.5vw, 1rem);
+  border-bottom: 0.0625rem solid var(--color-border-subtle);
+}
+
+.side-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.side-nav-title {
+  font-size: clamp(1.125rem, 2vw, 1.25rem);
+  font-weight: 700;
+  color: var(--color-text-main);
+}
+
+.side-nav-user-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: clamp(0.75rem, 1.5vw, 1rem);
+  background: #F9FAFB;
+  border: 0.0625rem solid var(--color-border-subtle);
+  border-radius: 0.75rem;
+  margin-bottom: clamp(1rem, 2vw, 1.5rem);
+}
+
+.user-avatar-circle {
+  width: clamp(2.25rem, 4vw, 2.5rem);
+  height: clamp(2.25rem, 4vw, 2.5rem);
+  border-radius: 50%;
+  background: var(--color-brand-orange);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: clamp(0.875rem, 1.2vw, 1rem);
+  flex-shrink: 0;
+}
+
+.user-info-text {
+  overflow: hidden;
+}
+
+.user-name {
+  font-size: clamp(0.8125rem, 1.1vw, 0.9rem);
+  font-weight: 600;
+  color: var(--color-text-main);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.user-email {
+  font-size: clamp(0.6875rem, 0.9vw, 0.75rem);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.side-nav-section-title {
+  font-size: clamp(0.625rem, 0.8vw, 0.6875rem);
+  font-weight: 700;
+  letter-spacing: 0.05rem;
+  color: var(--color-text-subtle);
+  margin-bottom: clamp(0.5rem, 1vw, 0.75rem);
+}
+
+.side-nav-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  flex: 1 1 auto;
+}
+
+.side-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: clamp(0.625rem, 1.2vh, 0.75rem) clamp(0.75rem, 1.5vw, 1rem);
+  border-radius: 0.625rem;
+  font-size: clamp(0.875rem, 1.2vw, 0.95rem);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  position: relative;
+  transition: all var(--transition-fast);
+}
+
+.side-nav-link:hover {
+  color: var(--color-text-main);
+  background-color: #F3F4F6;
+}
+
+.side-nav-link.is-active {
+  color: var(--color-brand-orange);
+  background: rgba(226, 109, 36, 0.08);
+  font-weight: 600;
+}
+
+.side-nav-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.side-nav-indicator {
+  position: absolute;
+  right: 0.75rem;
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--color-brand-orange);
+}
+
+.side-nav-footer {
+  margin-top: auto;
+  padding-top: clamp(1rem, 2vw, 1.5rem);
+  border-top: 0.0625rem solid var(--color-border-subtle);
+}
+
+.side-nav-primary-cta {
+  display: block;
+  text-align: center;
+  padding: clamp(0.625rem, 1.2vh, 0.75rem);
+  background: var(--color-primary-dark);
+  color: #FFFFFF;
+  border-radius: 0.625rem;
+  font-weight: 600;
+  font-size: clamp(0.875rem, 1.2vw, 0.95rem);
+}
+
+.side-nav-logout-btn {
+  width: 100%;
+  text-align: center;
+  padding: clamp(0.625rem, 1.2vh, 0.75rem);
+  background: #FEF2F2;
+  color: var(--color-error);
+  border: 0.0625rem solid #FEE2E2;
+  border-radius: 0.625rem;
+  font-weight: 600;
+  font-size: clamp(0.875rem, 1.2vw, 0.95rem);
+  transition: background-color var(--transition-fast);
+}
+
+.side-nav-logout-btn:hover {
+  background: #FDE8E8;
+}
+
+/* ==========================================================================
+   LAYOUT CHANGING CODE IN MEDIA QUERIES ONLY
+   ========================================================================== */
+@media (max-width: 58rem) {
+  .desktop-navbar-nav {
+    display: none; /* Layout change: hide desktop links */
+  }
+
+  .hamburger-toggle-btn {
+    display: flex; /* Layout change: activate hamburger button */
+  }
+}

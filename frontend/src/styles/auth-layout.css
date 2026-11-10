@@ -1,0 +1,104 @@
+/* ==========================================================================
+   AUTH SPLIT-CARD LAYOUT STYLES
+   - Split-view container matching screenshots (Left form, Right hero card).
+   - Fluid auto-responsive layout using flexbox (flex, flex-shrink, flex-basis).
+   - Only layout changing code in media queries.
+   - Absolutely ZERO px units.
+   ========================================================================== */
+
+.auth-page-wrapper {
+  flex: 1 1 auto;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1rem, 3vh, 2.5rem) clamp(0.75rem, 2vw, 1.5rem);
+}
+
+.auth-split-card {
+  width: min(95vw, 66rem);
+  min-height: min(90vh, 46rem);
+  background: var(--color-card-bg);
+  border-radius: 1.5rem;
+  box-shadow: var(--shadow-card);
+  border: 0.0625rem solid var(--color-border-subtle);
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Left Column: Interactive Auth Form */
+.auth-form-column {
+  flex: 1 1 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1.5rem, 3.5vw, 2.75rem);
+  background: #FFFFFF;
+}
+
+.auth-form-inner-container {
+  width: min(100%, 25rem);
+  display: flex;
+  flex-direction: column;
+  margin: 0 auto;
+}
+
+/* Centered Sunburst Logo */
+.auth-logo-center-box {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: clamp(1rem, 2.2vh, 1.5rem);
+}
+
+/* Header (Title & Subtitle) */
+.auth-header-box {
+  text-align: center;
+  margin-bottom: clamp(1.25rem, 2.5vh, 1.75rem);
+}
+
+.auth-primary-title {
+  font-size: clamp(1.5rem, 2.5vw, 1.875rem);
+  font-weight: 700;
+  color: var(--color-text-main);
+  letter-spacing: -0.025rem;
+  margin-bottom: clamp(0.25rem, 0.8vh, 0.4rem);
+}
+
+.auth-subtitle-text {
+  font-size: clamp(0.8125rem, 1.1vw, 0.9375rem);
+  color: var(--color-text-muted);
+  line-height: 1.45;
+}
+
+.auth-form-body {
+  width: 100%;
+}
+
+/* Right Column: Visual Card */
+.auth-hero-column {
+  flex: 1 1 50%;
+  padding: clamp(0.625rem, 1vw, 0.75rem);
+  display: flex;
+  background: #FFFFFF;
+}
+
+/* ==========================================================================
+   LAYOUT CHANGING CODE IN MEDIA QUERIES ONLY
+   ========================================================================== */
+@media (max-width: 54rem) {
+  .auth-split-card {
+    flex-direction: column; /* Layout change: stacked layout */
+    min-height: auto;
+  }
+
+  .auth-hero-column {
+    display: none; /* Layout change: hide visual card on small screens */
+  }
+
+  .auth-form-column {
+    flex: 1 1 100%; /* Layout change: form takes full width */
+  }
+}
