@@ -7,7 +7,7 @@ import { Button } from '../common/Button';
 import { AlertNotice } from '../common/AlertNotice';
 
 export const VerifyEmailForm = ({ showUseAnotherAccount = true, onVerified = null }) => {
-  const { unverifiedEmail, markEmailVerified } = useAuth();
+  const { unverifiedEmail, markEmailVerified, login } = useAuth();
   const [code, setCode] = useState('');
   const [statusMessage, setStatusMessage] = useState({ type: '', text: '' });
 
@@ -15,6 +15,9 @@ export const VerifyEmailForm = ({ showUseAnotherAccount = true, onVerified = nul
     mutationFn: (data) => authService.verifyEmail(data),
     onSuccess: (res) => {
       markEmailVerified();
+      if (res?.user) {
+        login(res.user);
+      }
       setStatusMessage({
         type: 'success',
         text: res?.message || 'Email successfully verified! Redirecting to dashboard...',

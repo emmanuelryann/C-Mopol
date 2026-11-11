@@ -5,6 +5,10 @@ import crypto from 'crypto';
 import mongoose from 'mongoose';
 import User from '../models/user.js';
 import Session from '../models/session.js';
+import PendingRegistration, {
+  encryptPassword,
+  decryptPassword,
+} from '../models/pendingRegistration.js';
 import { authenticate } from '../middlewares/auth.js';
 import emailService from '../services/emailService.js';
 import {
@@ -145,8 +149,10 @@ const createOrUpdateSession = async (userId, refreshTokenHash, req) => {
 router.post('/register', validate(createUser), async (req, res, next) => {
   try {
     const { firstName, lastName, email, password, phone } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
 
-    const existingUser = await User.findOne({ email });
+    // 1. Check if user already exists in the permanent database
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       const error = new Error(
         'Unable to complete registration. If you already have an account, please log in.',
@@ -155,65 +161,47 @@ router.post('/register', validate(createUser), async (req, res, next) => {
       return next(error);
     }
 
-    const user = await User.create({
-      firstName,
-      lastName,
-      email,
-      password,
-      phone: phone || null,
-    });
+    // 2. Remove any previous pending registration for this email
+    await PendingRegistration.deleteMany({ email: normalizedEmail });
 
-    // Generate email verification code and token
+    // 3. Generate verification code & token
     const verificationCode = generateVerificationCode();
     const verificationToken = crypto.randomBytes(32).toString('hex');
 
-    user.emailVerificationCode = hashToken(verificationCode);
-    user.emailVerificationToken = hashToken(verificationToken);
-    user.emailVerificationExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
-    await user.save();
+    // 4. Temporarily hold registration in PendingRegistration (with encrypted password and 15m TTL)
+    // NO account is created in the User collection until verification is complete!
+    await PendingRegistration.create({
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      email: normalizedEmail,
+      encryptedPassword: encryptPassword(password),
+      phone: phone ? phone.trim() : null,
+      verificationCodeHash: hashToken(verificationCode),
+      verificationTokenHash: hashToken(verificationToken),
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000), // 15 minutes TTL auto-purge
+    });
 
-    // Dispatch verification & welcome emails asynchronously
+    // 5. Dispatch verification email via Resend
     emailService
       .sendVerificationEmail({
-        to: user.email,
-        firstName: user.firstName,
+        to: normalizedEmail,
+        firstName: firstName.trim(),
         code: verificationCode,
         token: verificationToken,
       })
       .catch((err) => console.error('Verification email dispatch error:', err.message));
 
-    emailService
-      .sendWelcomeEmail({
-        to: user.email,
-        firstName: user.firstName,
-      })
-      .catch((err) => console.error('Welcome email dispatch error:', err.message));
-
     if (process.env.NODE_ENV === 'development') {
-      console.log(`\n📨 [DEV ONLY] Verification code for ${user.email}: ${verificationCode}\n`);
+      console.log(`\n📨 [DEV ONLY] Verification code for ${normalizedEmail}: ${verificationCode}\n`);
     }
 
-    const refreshToken = generateRefreshToken(user._id);
-    const session = await createOrUpdateSession(
-      user._id,
-      hashToken(refreshToken),
-      req,
-    );
-    const accessToken = generateAccessToken(user._id, session._id);
-
-    setCookies(res, accessToken, refreshToken);
-
-    res.status(201).json({
+    // 6. Return response to frontend. No session or permanent user created yet!
+    res.status(200).json({
       success: true,
-      message: 'Registration successful.',
+      message: 'Verification code sent to your email. Please verify your email to complete registration.',
       data: {
-        user: {
-          _id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          role: user.role,
-        },
+        email: normalizedEmail,
+        pending: true,
       },
     });
   } catch (err) {
@@ -225,9 +213,20 @@ router.post('/register', validate(createUser), async (req, res, next) => {
 router.post('/login', validate(loginUser), async (req, res, next) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
 
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email: normalizedEmail }).select('+password');
     if (!user) {
+      // Check if user has an unverified pending registration
+      const pending = await PendingRegistration.findOne({ email: normalizedEmail });
+      if (pending) {
+        const error = new Error(
+          'Please complete your email verification before logging in. A verification code was sent to your email.',
+        );
+        error.statusCode = 403;
+        return next(error);
+      }
+
       const error = new Error('Invalid email or password.');
       error.statusCode = 401;
       return next(error);
@@ -409,26 +408,105 @@ router.post('/verify-email', async (req, res, next) => {
   try {
     const { code, email, token } = req.body;
 
-    let user;
+    const normalizedEmail = email ? email.trim().toLowerCase() : null;
+    const hashedCode = code ? hashToken(code.trim().toUpperCase()) : null;
+    const hashedToken = token ? hashToken(token.trim()) : null;
 
-    if (token) {
-      const hashedToken = hashToken(token);
+    if (!hashedToken && (!hashedCode || !normalizedEmail)) {
+      const error = new Error('Please enter your verification code and email address.');
+      error.statusCode = 400;
+      return next(error);
+    }
+
+    // ── STEP 1: Check Pending Registration First ──
+    let pending;
+    if (hashedToken) {
+      pending = await PendingRegistration.findOne({
+        verificationTokenHash: hashedToken,
+        expiresAt: { $gt: new Date() },
+      });
+    } else if (hashedCode && normalizedEmail) {
+      pending = await PendingRegistration.findOne({
+        email: normalizedEmail,
+        verificationCodeHash: hashedCode,
+        expiresAt: { $gt: new Date() },
+      });
+    }
+
+    if (pending) {
+      // Check if user already exists in permanent collection
+      const existingUser = await User.findOne({ email: pending.email });
+      if (existingUser) {
+        await PendingRegistration.deleteMany({ email: pending.email });
+        const error = new Error('An account with this email already exists. Please log in.');
+        error.statusCode = 409;
+        return next(error);
+      }
+
+      // Decrypt password
+      const rawPassword = decryptPassword(pending.encryptedPassword);
+
+      // CREATE THE USER IN DATABASE ONLY NOW UPON SUCCESSFUL EMAIL VERIFICATION
+      const newUser = await User.create({
+        firstName: pending.firstName,
+        lastName: pending.lastName,
+        email: pending.email,
+        password: rawPassword, // Will be hashed with bcrypt by userSchema.pre('save')
+        phone: pending.phone || null,
+        isEmailVerified: true,
+      });
+
+      // Remove the pending registration document
+      await PendingRegistration.deleteMany({ email: pending.email });
+
+      // Create session and set auth cookies
+      const refreshToken = generateRefreshToken(newUser._id);
+      const session = await createOrUpdateSession(
+        newUser._id,
+        hashToken(refreshToken),
+        req,
+      );
+      const accessToken = generateAccessToken(newUser._id, session._id);
+
+      setCookies(res, accessToken, refreshToken);
+
+      // Asynchronously dispatch welcome email
+      emailService
+        .sendWelcomeEmail({
+          to: newUser.email,
+          firstName: newUser.firstName,
+        })
+        .catch((err) => console.error('Welcome email dispatch error:', err.message));
+
+      return res.status(200).json({
+        success: true,
+        message: 'Email address verified and account created successfully!',
+        user: {
+          _id: newUser._id,
+          firstName: newUser.firstName,
+          lastName: newUser.lastName,
+          email: newUser.email,
+          role: newUser.role,
+          phone: newUser.phone,
+          isEmailVerified: true,
+        },
+        accessToken,
+      });
+    }
+
+    // ── STEP 2: Check Existing User (for profile verification flow) ──
+    let user;
+    if (hashedToken) {
       user = await User.findOne({
         emailVerificationToken: hashedToken,
         emailVerificationExpires: { $gt: Date.now() },
       }).select('+emailVerificationCode +emailVerificationToken +emailVerificationExpires');
-    } else if (code && email) {
-      const normalizedEmail = email.trim().toLowerCase();
-      const hashedCode = hashToken(code.trim().toUpperCase());
+    } else if (hashedCode && normalizedEmail) {
       user = await User.findOne({
         email: normalizedEmail,
         emailVerificationCode: hashedCode,
         emailVerificationExpires: { $gt: Date.now() },
       }).select('+emailVerificationCode +emailVerificationToken +emailVerificationExpires');
-    } else {
-      const error = new Error('Please enter your verification code and email address.');
-      error.statusCode = 400;
-      return next(error);
     }
 
     if (!user) {
@@ -460,13 +538,76 @@ router.get('/verify-email/:token', async (req, res, next) => {
   try {
     const { token } = req.params;
     const hashedToken = hashToken(token);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
+    // ── STEP 1: Check Pending Registration First ──
+    const pending = await PendingRegistration.findOne({
+      verificationTokenHash: hashedToken,
+      expiresAt: { $gt: new Date() },
+    });
+
+    if (pending) {
+      const rawPassword = decryptPassword(pending.encryptedPassword);
+
+      // CREATE THE USER IN DATABASE ONLY NOW UPON SUCCESSFUL EMAIL VERIFICATION
+      const newUser = await User.create({
+        firstName: pending.firstName,
+        lastName: pending.lastName,
+        email: pending.email,
+        password: rawPassword,
+        phone: pending.phone || null,
+        isEmailVerified: true,
+      });
+
+      await PendingRegistration.deleteMany({ email: pending.email });
+
+      const refreshToken = generateRefreshToken(newUser._id);
+      const session = await createOrUpdateSession(
+        newUser._id,
+        hashToken(refreshToken),
+        req,
+      );
+      const accessToken = generateAccessToken(newUser._id, session._id);
+
+      setCookies(res, accessToken, refreshToken);
+
+      emailService
+        .sendWelcomeEmail({
+          to: newUser.email,
+          firstName: newUser.firstName,
+        })
+        .catch((err) => console.error('Welcome email dispatch error:', err.message));
+
+      if (req.headers.accept?.includes('text/html')) {
+        return res.redirect(`${frontendUrl}/dashboard?verified=true`);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Email address verified and account created successfully.',
+        user: {
+          _id: newUser._id,
+          firstName: newUser.firstName,
+          lastName: newUser.lastName,
+          email: newUser.email,
+          role: newUser.role,
+          phone: newUser.phone,
+          isEmailVerified: true,
+        },
+        accessToken,
+      });
+    }
+
+    // ── STEP 2: Check Existing User ──
     const user = await User.findOne({
       emailVerificationToken: hashedToken,
       emailVerificationExpires: { $gt: Date.now() },
     }).select('+emailVerificationCode +emailVerificationToken +emailVerificationExpires');
 
     if (!user) {
+      if (req.headers.accept?.includes('text/html')) {
+        return res.redirect(`${frontendUrl}/login?error=invalid_or_expired_verification_token`);
+      }
       const error = new Error('Verification link is invalid or has expired.');
       error.statusCode = 400;
       return next(error);
@@ -479,7 +620,6 @@ router.get('/verify-email/:token', async (req, res, next) => {
     await user.save();
 
     if (req.headers.accept?.includes('text/html')) {
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
       return res.redirect(`${frontendUrl}/dashboard?verified=true`);
     }
 
@@ -505,13 +645,43 @@ router.post('/resend-verification', async (req, res, next) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
+
+    // ── STEP 1: Check Pending Registration ──
+    const pending = await PendingRegistration.findOne({ email: normalizedEmail });
+    if (pending) {
+      const verificationCode = generateVerificationCode();
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+
+      pending.verificationCodeHash = hashToken(verificationCode);
+      pending.verificationTokenHash = hashToken(verificationToken);
+      pending.expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+      await pending.save();
+
+      await emailService.sendVerificationEmail({
+        to: pending.email,
+        firstName: pending.firstName,
+        code: verificationCode,
+        token: verificationToken,
+      });
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`\n📨 [DEV ONLY] Resent verification code for ${pending.email}: ${verificationCode}\n`);
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Verification code resent successfully. Please check your inbox.',
+      });
+    }
+
+    // ── STEP 2: Check Existing User ──
     const user = await User.findOne({ email: normalizedEmail });
 
     // Return generic message to prevent account discovery
     if (!user) {
       return res.status(200).json({
         success: true,
-        message: 'If an account with that email exists, a new verification code has been sent.',
+        message: 'If an account or pending registration with that email exists, a new verification code has been sent.',
       });
     }
 
@@ -680,8 +850,9 @@ router.post(
   async (req, res, next) => {
     try {
       const { email } = req.body;
+      const normalizedEmail = email ? email.trim().toLowerCase() : '';
 
-      const user = await User.findOne({ email });
+      const user = await User.findOne({ email: normalizedEmail });
 
       if (user) {
         // Generate a random reset token
@@ -705,7 +876,7 @@ router.post(
         // Log in development for testing
         if (process.env.NODE_ENV === 'development') {
           console.log(
-            `\n🔑 [DEV ONLY] Password reset token for ${email}: ${resetToken}\n`,
+            `\n🔑 [DEV ONLY] Password reset token for ${normalizedEmail}: ${resetToken}\n`,
           );
         }
       }

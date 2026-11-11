@@ -1,3 +1,5 @@
+import dotenv from 'dotenv';
+dotenv.config();
 import { Resend } from 'resend';
 
 // Default sender address (Resend provides onboarding@resend.dev for testing before domain verification)
@@ -8,30 +10,42 @@ class EmailService {
   constructor() {
     this.apiKey = process.env.RESEND_API_KEY || '';
     this.client = null;
-
-    if (this.isConfigured()) {
-      this.client = new Resend(this.apiKey);
-    }
   }
 
   /**
    * Check whether a valid Resend API key is configured.
+   * Dynamically checks environment in case .env was updated.
    */
   isConfigured() {
+    try {
+      dotenv.config({ override: false });
+    } catch {
+      // Ignore if dotenv fails
+    }
     const key = process.env.RESEND_API_KEY || this.apiKey;
     return Boolean(key && key.trim() && key.startsWith('re_') && !key.includes('your_resend_api_key'));
+  }
+
+  /**
+   * Get or instantiate the Resend client dynamically.
+   */
+  getClient() {
+    if (!this.isConfigured()) return null;
+    const currentKey = process.env.RESEND_API_KEY || this.apiKey;
+    if (!this.client || this.apiKey !== currentKey) {
+      this.apiKey = currentKey;
+      this.client = new Resend(currentKey);
+    }
+    return this.client;
   }
 
   /**
    * Core send method that invokes Resend or logs in mock mode if API key is pending.
    */
   async send({ to, subject, html, text, from = DEFAULT_FROM }) {
-    // Re-check in case API key was added or updated in environment
-    if (!this.client && this.isConfigured()) {
-      this.client = new Resend(process.env.RESEND_API_KEY);
-    }
+    const client = this.getClient();
 
-    if (!this.isConfigured() || !this.client) {
+    if (!client) {
       console.log(`\n📨 [EMAIL DEV/MOCK] Resend API key not yet set or in mock mode.`);
       console.log(`   To: ${to}`);
       console.log(`   Subject: ${subject}`);
@@ -48,9 +62,12 @@ class EmailService {
     }
 
     try {
-      const response = await this.client.emails.send({
-        from: process.env.EMAIL_FROM || from,
-        to: Array.isArray(to) ? to : [to],
+      const fromAddress = process.env.EMAIL_FROM || from || DEFAULT_FROM;
+      const recipientList = Array.isArray(to) ? to : [to];
+
+      const response = await client.emails.send({
+        from: fromAddress,
+        to: recipientList,
         subject,
         html,
         text,
@@ -58,6 +75,18 @@ class EmailService {
 
       if (response.error) {
         console.error('❌ Resend API Error:', response.error);
+
+        // Specific detection for Resend's free-tier recipient restriction
+        if (
+          response.error.message &&
+          response.error.message.includes('You can only send testing emails to your own email address')
+        ) {
+          console.warn(`\n⚠️  [RESEND RECIPIENT RESTRICTION]:`);
+          console.warn(`   Resend's default test domain (onboarding@resend.dev) ONLY allows delivering emails to your verified account email (emmanuelryan4621@gmail.com).`);
+          console.warn(`   👉 To receive live emails directly in your inbox, enter 'emmanuelryan4621@gmail.com' in the email field.`);
+          console.warn(`   👉 To send to any recipient, verify your custom domain in Resend (resend.com/domains).\n`);
+        }
+
         return { success: false, error: response.error };
       }
 
