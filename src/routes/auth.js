@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import User from '../models/user.js';
 import Session from '../models/session.js';
 import { authenticate } from '../middlewares/auth.js';
+import emailService from '../services/emailService.js';
 import {
   validate,
   createUser,
@@ -23,6 +24,15 @@ const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 const hashToken = (token) => {
   return crypto.createHash('sha256').update(token).digest('hex');
+};
+
+const generateVerificationCode = () => {
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(crypto.randomInt(0, chars.length));
+  }
+  return code;
 };
 
 const generateAccessToken = (userId, sessionId) => {
@@ -152,6 +162,36 @@ router.post('/register', validate(createUser), async (req, res, next) => {
       password,
       phone: phone || null,
     });
+
+    // Generate email verification code and token
+    const verificationCode = generateVerificationCode();
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+
+    user.emailVerificationCode = hashToken(verificationCode);
+    user.emailVerificationToken = hashToken(verificationToken);
+    user.emailVerificationExpires = Date.now() + 15 * 60 * 1000; // 15 minutes
+    await user.save();
+
+    // Dispatch verification & welcome emails asynchronously
+    emailService
+      .sendVerificationEmail({
+        to: user.email,
+        firstName: user.firstName,
+        code: verificationCode,
+        token: verificationToken,
+      })
+      .catch((err) => console.error('Verification email dispatch error:', err.message));
+
+    emailService
+      .sendWelcomeEmail({
+        to: user.email,
+        firstName: user.firstName,
+      })
+      .catch((err) => console.error('Welcome email dispatch error:', err.message));
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`\n📨 [DEV ONLY] Verification code for ${user.email}: ${verificationCode}\n`);
+    }
 
     const refreshToken = generateRefreshToken(user._id);
     const session = await createOrUpdateSession(
@@ -362,6 +402,154 @@ router.get('/me', authenticate, async (req, res, next) => {
   }
 });
 
+// ── Email Verification ──────────────────────────────────────────
+
+// Verify Email (Code or Token)
+router.post('/verify-email', async (req, res, next) => {
+  try {
+    const { code, email, token } = req.body;
+
+    let user;
+
+    if (token) {
+      const hashedToken = hashToken(token);
+      user = await User.findOne({
+        emailVerificationToken: hashedToken,
+        emailVerificationExpires: { $gt: Date.now() },
+      }).select('+emailVerificationCode +emailVerificationToken +emailVerificationExpires');
+    } else if (code && email) {
+      const normalizedEmail = email.trim().toLowerCase();
+      const hashedCode = hashToken(code.trim().toUpperCase());
+      user = await User.findOne({
+        email: normalizedEmail,
+        emailVerificationCode: hashedCode,
+        emailVerificationExpires: { $gt: Date.now() },
+      }).select('+emailVerificationCode +emailVerificationToken +emailVerificationExpires');
+    } else {
+      const error = new Error('Please enter your verification code and email address.');
+      error.statusCode = 400;
+      return next(error);
+    }
+
+    if (!user) {
+      const error = new Error('Verification code is invalid or has expired.');
+      error.statusCode = 400;
+      return next(error);
+    }
+
+    user.isEmailVerified = true;
+    user.emailVerificationCode = undefined;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpires = undefined;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Email address verified successfully.',
+      data: {
+        isEmailVerified: true,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Link-based verification
+router.get('/verify-email/:token', async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const hashedToken = hashToken(token);
+
+    const user = await User.findOne({
+      emailVerificationToken: hashedToken,
+      emailVerificationExpires: { $gt: Date.now() },
+    }).select('+emailVerificationCode +emailVerificationToken +emailVerificationExpires');
+
+    if (!user) {
+      const error = new Error('Verification link is invalid or has expired.');
+      error.statusCode = 400;
+      return next(error);
+    }
+
+    user.isEmailVerified = true;
+    user.emailVerificationCode = undefined;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpires = undefined;
+    await user.save();
+
+    if (req.headers.accept?.includes('text/html')) {
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      return res.redirect(`${frontendUrl}/dashboard?verified=true`);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Email address verified successfully.',
+      data: { isEmailVerified: true },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Resend verification code
+router.post('/resend-verification', async (req, res, next) => {
+  try {
+    const email = req.body?.email || req.user?.email;
+
+    if (!email) {
+      const error = new Error('Email address is required.');
+      error.statusCode = 400;
+      return next(error);
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await User.findOne({ email: normalizedEmail });
+
+    // Return generic message to prevent account discovery
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message: 'If an account with that email exists, a new verification code has been sent.',
+      });
+    }
+
+    if (user.isEmailVerified) {
+      return res.status(200).json({
+        success: true,
+        message: 'Your email address is already verified.',
+      });
+    }
+
+    const verificationCode = generateVerificationCode();
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+
+    user.emailVerificationCode = hashToken(verificationCode);
+    user.emailVerificationToken = hashToken(verificationToken);
+    user.emailVerificationExpires = Date.now() + 15 * 60 * 1000;
+    await user.save();
+
+    await emailService.sendVerificationEmail({
+      to: user.email,
+      firstName: user.firstName,
+      code: verificationCode,
+      token: verificationToken,
+    });
+
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`\n📨 [DEV ONLY] Resent verification code for ${user.email}: ${verificationCode}\n`);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Verification code resent successfully. Please check your inbox.',
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── Session Management ──────────────────────────────────────────
 
 // List active sessions for the current user
@@ -467,6 +655,14 @@ router.post(
       res.clearCookie('accessToken');
       res.clearCookie('refreshToken');
 
+      // Dispatch security notification email asynchronously
+      emailService
+        .sendPasswordChangedEmail({
+          to: user.email,
+          firstName: user.firstName,
+        })
+        .catch((err) => console.error('Password changed notification error:', err.message));
+
       res.status(200).json({
         success: true,
         message: 'Password changed successfully. Please log in again.',
@@ -499,7 +695,14 @@ router.post(
         user.passwordResetExpires = Date.now() + 10 * 60 * 1000;
         await user.save();
 
-        // Log in development for testing until an email service is integrated
+        // Dispatch password reset email via Resend
+        await emailService.sendPasswordResetEmail({
+          to: user.email,
+          firstName: user.firstName,
+          resetToken,
+        });
+
+        // Log in development for testing
         if (process.env.NODE_ENV === 'development') {
           console.log(
             `\n🔑 [DEV ONLY] Password reset token for ${email}: ${resetToken}\n`,
@@ -554,6 +757,14 @@ router.post(
 
       res.clearCookie('accessToken');
       res.clearCookie('refreshToken');
+
+      // Dispatch security notification email asynchronously
+      emailService
+        .sendPasswordChangedEmail({
+          to: user.email,
+          firstName: user.firstName,
+        })
+        .catch((err) => console.error('Password changed notification error:', err.message));
 
       res.status(200).json({
         success: true,

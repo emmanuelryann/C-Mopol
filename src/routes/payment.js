@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import Payment, { PAYMENT_STATUSES } from '../models/payment.js';
 import Order from '../models/order.js';
 import paymentService from '../services/paymentService.js';
+import emailService from '../services/emailService.js';
 import { authenticate, authorize } from '../middlewares/auth.js';
 import { validate, initializePayment } from '../middlewares/validation.js';
 
@@ -42,6 +43,23 @@ const markOrderPaid = async (payment, paidAt, channel) => {
     },
   );
   await Order.updateOne({ _id: payment.order, status: 'pending' }, { status: 'processing' });
+
+  // Asynchronously dispatch order confirmation receipt email
+  try {
+    const orderDoc = await Order.findById(payment.order).populate('user', 'firstName lastName email');
+    if (orderDoc && orderDoc.user?.email) {
+      emailService
+        .sendOrderConfirmationEmail({
+          to: orderDoc.user.email,
+          firstName: orderDoc.user.firstName || 'Customer',
+          order: orderDoc,
+          payment,
+        })
+        .catch((err) => console.error('Order confirmation email error:', err.message));
+    }
+  } catch (err) {
+    console.error('Failed to trigger order confirmation email:', err.message);
+  }
 };
 
 // ─────────────────────────────────────────────────────────────────

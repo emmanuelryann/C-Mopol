@@ -7,23 +7,26 @@ This document outlines backend features, security enhancements, integrations, an
 ## 1. Authentication & Security Enhancements
 
 ### 1.1 Email Service Integration
-- **Status:** Pending
-- **Description:** Connect a transactional email provider (e.g., Nodemailer with AWS SES, SendGrid, or Resend) to send system emails.
+- **Status:** Completed (Resend integration via `src/services/emailService.js`)
+- **Description:** Connected Resend transactional email provider to send system emails.
 - **Tasks:**
-  - Create an email transport service (`src/services/email.js`).
-  - Implement HTML email templates for:
-    - Password reset links (replaces the dev console log in `POST /forgot-password`).
-    - Welcome email upon registration.
-    - Email verification links.
-    - Order receipts and shipping notifications.
+  - Created email transport service (`src/services/emailService.js`).
+  - Implemented responsive HTML email templates with C-Mopol aesthetic branding for:
+    - Password reset links (`sendPasswordResetEmail`).
+    - Password changed security alerts (`sendPasswordChangedEmail`).
+    - Welcome email upon registration (`sendWelcomeEmail`).
+    - Email verification codes and links (`sendVerificationEmail`).
+    - Order receipts and confirmation (`sendOrderConfirmationEmail`).
+    - Shipping and order status updates (`sendOrderStatusEmail`).
 
 ### 1.2 Account Email Verification
-- **Status:** Schema field ready (`isEmailVerified: Boolean` in `User` model)
-- **Description:** Require users to verify their email address before accessing certain customer features.
+- **Status:** Completed (`src/models/user.js` and `src/routes/auth.js`)
+- **Description:** Cryptographic code and token verification for customer email accounts.
 - **Tasks:**
-  - Add `emailVerificationToken` and `emailVerificationExpires` to `User` schema (with `select: false`).
-  - Endpoint `POST /api/v1/auth/verify-email/:token` to confirm verification.
-  - Endpoint `POST /api/v1/auth/resend-verification` with rate limiting.
+  - Added `emailVerificationToken`, `emailVerificationCode`, and `emailVerificationExpires` to `User` schema (with `select: false`).
+  - Endpoint `POST /api/v1/auth/verify-email` (supports 6-character code e.g. `12MP3P` and token).
+  - Endpoint `GET /api/v1/auth/verify-email/:token` (direct browser/link verification).
+  - Endpoint `POST /api/v1/auth/resend-verification` (regenerates fresh code and dispatches email).
 
 ### 1.3 Multi-Device & Session Management
 - **Status:** Pending

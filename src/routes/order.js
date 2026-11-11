@@ -5,6 +5,7 @@ import Order from '../models/order.js';
 import Cart from '../models/cart.js';
 import Product from '../models/product.js';
 import Address from '../models/address.js';
+import emailService from '../services/emailService.js';
 import { authenticate, authorize } from '../middlewares/auth.js';
 import {
   validate,
@@ -192,6 +193,23 @@ router.patch('/admin/:id/status', authorize('admin'), validate(updateOrderStatus
         ),
       );
       await Promise.all(stockOps);
+    }
+
+    // Asynchronously dispatch order status update email
+    try {
+      const populated = await Order.findById(updatedOrder._id).populate('user', 'firstName lastName email');
+      if (populated?.user?.email) {
+        emailService
+          .sendOrderStatusEmail({
+            to: populated.user.email,
+            firstName: populated.user.firstName || 'Customer',
+            order: populated,
+            newStatus: status,
+          })
+          .catch((err) => console.error('Order status email error:', err.message));
+      }
+    } catch (e) {
+      console.error('Failed to trigger order status email:', e.message);
     }
 
     res.status(200).json({
